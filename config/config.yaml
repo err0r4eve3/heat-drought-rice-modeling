@@ -1,0 +1,251 @@
+project_root: .
+data_raw_dir: data/raw
+data_interim_dir: data/interim
+data_processed_dir: data/processed
+output_dir: data/outputs
+
+study_area_name: 长江中下游稻作区
+study_bbox: [105, 24, 123, 35]
+target_admin_level: county
+
+study_region_policy:
+  default_region: "yangtze_middle_lower"
+  regions:
+    yangtze_middle_lower:
+      provinces:
+        - "上海市"
+        - "江苏省"
+        - "浙江省"
+        - "安徽省"
+        - "江西省"
+        - "湖北省"
+        - "湖南省"
+    yangtze_basin_event_region:
+      provinces:
+        - "四川省"
+        - "重庆市"
+        - "湖北省"
+        - "湖南省"
+        - "江西省"
+        - "安徽省"
+        - "江苏省"
+        - "浙江省"
+        - "上海市"
+  filter_model_panel_to_study_region: true
+  allow_national_background_only: true
+
+crs_wgs84: EPSG:4326
+crs_equal_area: EPSG:6933
+
+baseline_years: [2000, 2021]
+main_event_year: 2022
+validation_event_year: 2024
+recovery_years: [2023, 2024, 2025]
+
+panel_policy:
+  main_content_years: [2000, 2024]
+  optional_content_years: [2025]
+  use_2025_in_main_model: false
+  yearbook_year_is_not_content_year: true
+  content_year_field_required: true
+  notes: "中国县域统计年鉴、地方统计年鉴等通常存在出版年份与内容年份滞后，所有面板以表内内容年份为准。"
+
+main_event_months: [6, 7, 8, 9, 10]
+rice_growth_months: [6, 7, 8, 9]
+
+heat_threshold_quantile: 0.90
+drought_threshold_quantile: 0.10
+min_valid_observations: 10
+
+output_formats:
+  - csv
+  - parquet
+  - geopackage
+  - geotiff
+  - png
+  - markdown
+
+research_design:
+  primary_claim: "impact_assessment"
+  causal_strength: "quasi_causal_attempt"
+  forbidden_claims:
+    - "strong_causal_claim_without_valid_identification"
+    - "county_level_full_coverage_if_data_missing"
+  preferred_admin_level_order:
+    - prefecture
+    - county
+    - province
+  preferred_crop_order:
+    - rice
+    - grain
+  main_event_year: 2022
+  validation_event_year: 2024
+  use_2024_as:
+    - external_validation
+    - descriptive_comparison
+  allow_2024_causal_validation: false
+
+data_tiers:
+  yield_data:
+    tier_1:
+      name: "official_county_or_prefecture_rice_panel"
+      description: "官方县级或地级市稻谷/水稻面积、产量、单产连续面板"
+      usable_for:
+        - main_model
+        - fixed_effects
+        - event_study
+    tier_2:
+      name: "official_county_or_prefecture_grain_panel"
+      description: "官方县级或地级市粮食面积、产量、单产连续面板"
+      usable_for:
+        - main_model_with_crop_scope_downgrade
+        - fixed_effects
+    tier_3:
+      name: "provincial_rice_panel"
+      description: "省级稻谷/水稻官方面板"
+      usable_for:
+        - robustness
+        - background
+        - macro_validation
+    tier_4:
+      name: "remote_sensing_yield_proxy"
+      description: "NDVI/EVI/SIF/产量代理指标"
+      usable_for:
+        - descriptive_analysis
+        - robustness
+        - mechanism_analysis
+      not_usable_for:
+        - official_yield_loss_claim
+        - strong_causal_claim
+
+validation_2024:
+  required_for_main_claim: false
+  allowed_outputs:
+    - descriptive_maps
+    - exposure_comparison
+    - remote_sensing_response
+    - partial_yield_check_if_available
+  forbidden_outputs_without_yield_panel:
+    - county_level_yield_loss_estimate
+    - causal_validation
+    - recovery_conclusion
+
+boundary_policy:
+  default_boundary_year: 2022
+  use_current_boundary_for_all_years: true
+  boundary_sensitivity_check: true
+  notes: "主模型默认把历史统计数据映射到 2022 年边界；若跨年边界数据可得，则做边界敏感性检查。"
+
+external_data_access:
+  cds:
+    required_for:
+      - ERA5-Land
+    needs_account: true
+    needs_api_key: true
+    local_secret_file: "~/.cdsapirc"
+  earthdata:
+    required_for:
+      - MODIS
+      - SMAP
+      - GRACE
+    needs_account: true
+    auth_method:
+      - earthaccess
+      - netrc
+  cma:
+    required_for:
+      - station_observation
+    needs_account: true
+    may_have_license_limits: true
+  cnki:
+    required_for:
+      - county_yearbook
+      - city_yearbook
+    needs_subscription: true
+  eps:
+    required_for:
+      - commercial_statistics
+    needs_subscription: true
+
+yield_source_priority:
+  - official_prefecture_or_county_rice_panel_2000_2024
+  - official_prefecture_or_county_grain_panel_2000_2024
+  - provincial_rice_panel
+  - local_yearbook_pdf_or_excel
+  - cnki_yearbook_database
+  - eps_county_database
+  - third_party_yearbook_as_search_clue
+  - remote_sensing_proxy
+
+yield_policy:
+  preferred_admin_level_order:
+    - prefecture
+    - county
+    - province
+  preferred_crop_order:
+    - rice
+    - grain
+  min_coverage_for_main_model: 0.75
+  min_coverage_for_exploratory_model: 0.50
+  allow_remote_sensing_proxy_for_yield_loss_claim: false
+
+validation_2024_policy:
+  use_as_main_event: false
+  use_as_external_validation: true
+  require_complete_yield_panel_for_yield_validation: true
+  allow_exposure_and_remote_sensing_only: true
+  forbidden_without_official_yield:
+    - yield_loss_claim
+    - causal_validation
+    - county_level_loss_map
+
+admin_crosswalk_policy:
+  target_boundary_year: 2022
+  computational_crosswalk_source: "yescallop/areacodes"
+  official_validation_source:
+    - "民政部"
+    - "国家地名信息库"
+  allow_fuzzy_name_match: true
+  fuzzy_match_min_confidence: 0.85
+  low_confidence_action: "manual_review"
+  paper_wording: "基于公开历史行政区划代码 crosswalk，并以民政部/国家地名信息库口径校验当前代码。"
+  forbidden_wording:
+    - "yescallop/areacodes 是官方 crosswalk"
+
+external_access_policy:
+  cds:
+    status: "configured"
+    action: "continue_using_era5_land"
+  earthdata:
+    status: "not_configured"
+    fix_commands:
+      - "pip install earthaccess"
+      - "python -c \"import earthaccess; earthaccess.login(persist=True)\""
+      - "chmod 600 ~/.netrc"
+  cma:
+    required_for_mvp: false
+    use_for: "station_validation_or_robustness"
+  cnki_eps:
+    required_for_mvp: false
+    use_for: "official_yearbook_panel_if_institution_has_subscription"
+  fallback_climate_data:
+    - ERA5-Land
+    - CHIRPS
+    - CMFD
+    - GLEAM
+    - MODIS
+    - SMAP
+
+causal_claim_gate:
+  default_claim: "impact_assessment"
+  allow_quasi_causal_claim_only_if:
+    yield_panel_coverage_gte: 0.75
+    pretrend_test_passed: true
+    placebo_tests_passed: true
+    robustness_direction_stable: true
+    admin_crosswalk_match_rate_gte: 0.90
+    mechanism_remote_sensing_consistent: true
+  forbidden_claims:
+    - "证明2022热旱导致减产"
+    - "完全识别因果效应"
+    - "县域官方产量损失图，若没有官方县域产量"

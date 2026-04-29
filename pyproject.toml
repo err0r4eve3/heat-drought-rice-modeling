@@ -1,0 +1,40 @@
+[project]
+name = "heat-drought-rice-modeling"
+version = "0.1.0"
+description = "Reproducible data processing and modeling pipeline for compound heat-drought impacts on rice yield."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "pandas",
+    "numpy",
+    "scipy",
+    "statsmodels",
+    "scikit-learn",
+    "matplotlib",
+    "seaborn",
+    "geopandas",
+    "shapely",
+    "pyproj",
+    "rasterio",
+    "rioxarray",
+    "xarray",
+    "netCDF4",
+    "h5netcdf",
+    "h5py",
+    "dask",
+    "pyarrow",
+    "openpyxl",
+    "tqdm",
+    "pyyaml",
+    "loguru",
+    "typer",
+    "pytest",
+    "zarr",
+    "xlrd>=2.0.2",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

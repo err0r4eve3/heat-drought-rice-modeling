@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.benchmarks/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+venv/
+env/
+heat_drought_download_package/.venv/
+heat_drought_download_package/
+
+# IDE
+.idea/
+.vscode/
+
+# Node/artifact helper dependencies from existing download package
+node_modules/
+heat_drought_download_package/node_modules/
+
+# Large or generated project data
+data/raw/**/*
+data/raw/admin_codes/yescallop_areacodes/
+data/interim/**/*
+data/processed/**/*
+data/outputs/**/*
+!data/**/
+!data/**/.gitkeep
+data/raw/admin_codes/yescallop_areacodes/
+data/raw/admin_codes/yescallop_areacodes
+
+# Generated reports
+reports/*.md
+!reports/.gitkeep
+
+# Common large geospatial/data artifacts
+*.tif
+*.tiff
+*.nc
+*.hdf
+*.h5
+*.zarr/
+*.gpkg
+*.shp
+*.dbf
+*.shx
+*.prj
+*.cpg
+*.parquet
