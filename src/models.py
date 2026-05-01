@@ -502,9 +502,9 @@ def _load_province_outcome_scope(processed: Path) -> dict[str, Any]:
         else:
             outcome_type = "province_grain_yield_anomaly"
     crop_type = "rice" if outcome_type == "province_rice_yield_anomaly" else "grain"
-    coverage_rate = _column_coverage(frame, outcome_type)
+    coverage_rate = _target_panel_column_coverage(frame, outcome_type)
     if coverage_rate == 0.0:
-        coverage_rate = _column_coverage(frame, "yield_anomaly_pct")
+        coverage_rate = _target_panel_column_coverage(frame, "yield_anomaly_pct")
     return {
         "tier": "tier_3",
         "tier_name": "provincial_official_yield_panel",
@@ -552,6 +552,13 @@ def _load_exposure_scope(processed: Path) -> dict[str, Any]:
 
     import pandas as pd
 
+    use_target_coverage = any(
+        path.exists()
+        for path in [
+            processed / "province_model_panel.parquet",
+            processed / "province_model_panel.csv",
+        ]
+    )
     panel = _read_first_existing_scope_table(
         [
             processed / "province_model_panel.parquet",
@@ -571,14 +578,15 @@ def _load_exposure_scope(processed: Path) -> dict[str, Any]:
     main = panel[(years >= 2000) & (years <= 2024)].copy()
     if main.empty:
         main = panel
-    chd_rate = _column_coverage(main, "chd_annual")
+    coverage_fn = _target_panel_column_coverage if use_target_coverage else _column_coverage
+    chd_rate = coverage_fn(main, "chd_annual")
     yield_rate = max(
-        _column_coverage(main, "yield_anomaly_pct"),
-        _column_coverage(main, "province_rice_yield_anomaly"),
-        _column_coverage(main, "province_grain_yield_anomaly"),
+        coverage_fn(main, "yield_anomaly_pct"),
+        coverage_fn(main, "province_rice_yield_anomaly"),
+        coverage_fn(main, "province_grain_yield_anomaly"),
     )
     if chd_rate == 0.0:
-        chd_rate = _column_coverage(main, "exposure_index")
+        chd_rate = coverage_fn(main, "exposure_index")
     has_2022 = _has_event_exposure(main, "chd_2022_intensity", 2022) or _has_event_exposure(main, "exposure_index", 2022)
     diagnosis = _read_exposure_diagnosis(processed.parent / "outputs" / "exposure_coverage_diagnosis.csv")
     status = diagnosis or ("ok_for_panel_model" if chd_rate >= 0.75 else "ok_only_for_2022_cross_section" if has_2022 else "not_usable_until_fixed")
@@ -615,6 +623,23 @@ def _column_coverage(frame: Any, column: str) -> float:
     values = frame[column]
     nonmissing = values.notna() & values.astype(str).str.strip().ne("")
     return float(nonmissing.sum() / len(frame)) if len(frame) else 0.0
+
+
+def _target_panel_column_coverage(frame: Any, column: str, min_year: int = 2000, max_year: int = 2024) -> float:
+    """Return coverage against expected province-year cells when possible."""
+
+    if frame is None or len(frame) == 0 or column not in frame.columns:
+        return 0.0
+    if "province" not in frame.columns:
+        return _column_coverage(frame, column)
+    provinces = frame["province"].dropna().astype(str).str.strip()
+    province_count = int(provinces[provinces.ne("")].nunique())
+    expected = province_count * (int(max_year) - int(min_year) + 1)
+    if expected <= 0:
+        return 0.0
+    values = frame[column]
+    nonmissing = values.notna() & values.astype(str).str.strip().ne("")
+    return float(nonmissing.sum() / expected)
 
 
 def _has_event_exposure(frame: Any, column: str, event_year: int) -> bool:

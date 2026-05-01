@@ -81,3 +81,38 @@ def test_build_province_model_panel_falls_back_to_grain_and_keeps_empty_chd_fiel
     assert "chd_annual" in panel.columns
     assert panel["chd_annual"].isna().all()
     assert "Province CHD panel not found; created empty CHD fields" in report_text
+
+
+def test_build_province_model_panel_uses_grain_when_rice_lacks_event_year(tmp_path: Path) -> None:
+    processed = tmp_path / "data" / "processed"
+    reports = tmp_path / "reports"
+    processed.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"province": "江苏省", "province_code": "320000", "year": 2000, "crop": "rice", "yield_kg_per_hectare": 6000},
+            {"province": "江苏省", "province_code": "320000", "year": 2001, "crop": "rice", "yield_kg_per_hectare": 6100},
+            {"province": "江苏省", "province_code": "320000", "year": 2020, "crop": "grain", "yield_kg_per_hectare": 5000},
+            {"province": "江苏省", "province_code": "320000", "year": 2021, "crop": "grain", "yield_kg_per_hectare": 5100},
+            {"province": "江苏省", "province_code": "320000", "year": 2022, "crop": "grain", "yield_kg_per_hectare": 4900},
+            {"province": "浙江省", "province_code": "330000", "year": 2020, "crop": "grain", "yield_kg_per_hectare": 5200},
+            {"province": "浙江省", "province_code": "330000", "year": 2021, "crop": "grain", "yield_kg_per_hectare": 5300},
+            {"province": "浙江省", "province_code": "330000", "year": 2022, "crop": "grain", "yield_kg_per_hectare": 5000},
+        ]
+    ).to_csv(processed / "yield_panel_combined.csv", index=False)
+
+    result = build_province_model_panel(
+        processed_dir=processed,
+        reports_dir=reports,
+        main_year_min=2020,
+        main_year_max=2024,
+        baseline_years=(2020, 2021),
+        min_valid_observations=2,
+    )
+
+    panel = pd.read_csv(processed / "province_model_panel.csv")
+    report_text = (reports / "province_panel_summary.md").read_text(encoding="utf-8")
+
+    assert result.outcome_type == "province_grain_yield_anomaly"
+    assert set(panel["year"]) == {2020, 2021, 2022}
+    assert panel["crop"].eq("grain").all()
+    assert "Province rice yield panel lacks 2022 event-year coverage; using province grain yield anomaly." in report_text

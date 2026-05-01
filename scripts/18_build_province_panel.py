@@ -43,6 +43,7 @@ def main() -> int:
         reports_dir=config.project_root / "reports",
         main_year_min=int(main_years[0]),
         main_year_max=int(main_years[1]),
+        main_event_year=config.main_event_year,
         baseline_years=config.baseline_years,
         min_valid_observations=config.min_valid_observations,
     )

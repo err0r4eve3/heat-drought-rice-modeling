@@ -58,6 +58,7 @@ class ProvincePanelResult:
     row_count: int
     outcome_type: str
     allowed_claim_strength: str
+    yield_coverage_rate: float = 0.0
     outputs: dict[str, Path] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     report_path: Path = Path("reports/province_panel_summary.md")
@@ -68,6 +69,7 @@ def build_province_model_panel(
     reports_dir: str | Path,
     main_year_min: int = 2000,
     main_year_max: int = 2024,
+    main_event_year: int = 2022,
     baseline_years: tuple[int, int] = (2000, 2021),
     min_valid_observations: int = 10,
 ) -> ProvincePanelResult:
@@ -89,7 +91,7 @@ def build_province_model_panel(
         panel = pd.DataFrame(columns=PROVINCE_MODEL_COLUMNS)
         outcome_type = "province_grain_yield_anomaly"
     else:
-        outcome_source, outcome_type = _select_official_outcome(yield_panel, warnings)
+        outcome_source, outcome_type = _select_official_outcome(yield_panel, warnings, main_event_year=main_event_year)
         panel = _prepare_outcome_panel(
             outcome_source,
             outcome_type=outcome_type,
@@ -103,12 +105,14 @@ def build_province_model_panel(
         panel = _finalize_columns(panel)
 
     _write_outputs(panel, csv_path, parquet_path, warnings)
-    allowed_claim_strength = _allowed_claim_strength(panel)
+    yield_coverage_rate = _target_column_coverage(panel, "yield_anomaly_pct", main_year_min, main_year_max)
+    allowed_claim_strength = _allowed_claim_strength(panel, main_year_min, main_year_max)
     result = ProvincePanelResult(
         status="ok" if len(panel) else "empty",
         row_count=len(panel),
         outcome_type=outcome_type,
         allowed_claim_strength=allowed_claim_strength,
+        yield_coverage_rate=yield_coverage_rate,
         outputs={"csv": csv_path, "parquet": parquet_path},
         warnings=warnings,
         report_path=report_path,
@@ -137,7 +141,7 @@ def _load_yield_panel(processed: Path, warnings: list[str]) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def _select_official_outcome(frame: pd.DataFrame, warnings: list[str]) -> tuple[pd.DataFrame, str]:
+def _select_official_outcome(frame: pd.DataFrame, warnings: list[str], main_event_year: int = 2022) -> tuple[pd.DataFrame, str]:
     """Prefer province rice yield; fall back to province grain yield."""
 
     work = frame.copy()
@@ -152,10 +156,18 @@ def _select_official_outcome(frame: pd.DataFrame, warnings: list[str]) -> tuple[
     crop_text = work.get("crop", pd.Series("", index=work.index)).fillna("").astype(str)
     crop_norm = crop_text.str.lower().str.strip()
     rice = work[crop_norm.isin({crop.lower() for crop in RICE_CROPS}) | crop_text.isin(RICE_CROPS)].copy()
+    grain = work[crop_norm.isin({crop.lower() for crop in GRAIN_CROPS}) | crop_text.isin(GRAIN_CROPS)].copy()
     if not rice.empty and _first_yield_column(rice) is not None:
+        rice_years = pd.to_numeric(rice.get("year", pd.Series(dtype=float)), errors="coerce")
+        if (rice_years == int(main_event_year)).any():
+            return rice, "province_rice_yield_anomaly"
+        if not grain.empty and _first_yield_column(grain) is not None:
+            warnings.append(
+                f"Province rice yield panel lacks {main_event_year} event-year coverage; using province grain yield anomaly."
+            )
+            return grain, "province_grain_yield_anomaly"
         return rice, "province_rice_yield_anomaly"
 
-    grain = work[crop_norm.isin({crop.lower() for crop in GRAIN_CROPS}) | crop_text.isin(GRAIN_CROPS)].copy()
     if not grain.empty and _first_yield_column(grain) is not None:
         warnings.append("Province rice yield panel not found; using province grain yield anomaly.")
         return grain, "province_grain_yield_anomaly"
@@ -323,7 +335,8 @@ def _write_report(result: ProvincePanelResult, panel: pd.DataFrame, min_year: in
         f"- Current outcome type: {result.outcome_type}",
         f"- Current allowed maximum claim strength: {result.allowed_claim_strength}",
         f"- Province count: {_nunique(panel, 'province')}",
-        f"- chd_annual coverage rate: {_coverage_rate(panel, 'chd_annual'):.6f}",
+        f"- yield_anomaly_pct coverage rate against {min_year}-{max_year}: {result.yield_coverage_rate:.6f}",
+        f"- chd_annual coverage rate against {min_year}-{max_year}: {_target_column_coverage(panel, 'chd_annual', min_year, max_year):.6f}",
         "",
         "## Scope",
         "",
@@ -340,13 +353,14 @@ def _write_report(result: ProvincePanelResult, panel: pd.DataFrame, min_year: in
     result.report_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _allowed_claim_strength(panel: pd.DataFrame) -> str:
+def _allowed_claim_strength(panel: pd.DataFrame, min_year: int, max_year: int) -> str:
     """Gate the maximum claim strength from available coverage."""
 
     if panel.empty:
         return "association"
-    chd_coverage = _coverage_rate(panel, "chd_annual")
-    return "impact_assessment" if chd_coverage >= 0.75 else "association"
+    chd_coverage = _target_column_coverage(panel, "chd_annual", min_year, max_year)
+    yield_coverage = _target_column_coverage(panel, "yield_anomaly_pct", min_year, max_year)
+    return "impact_assessment" if chd_coverage >= 0.75 and yield_coverage >= 0.75 else "association"
 
 
 def _first_yield_column(frame: pd.DataFrame) -> str | None:
@@ -402,6 +416,21 @@ def _coverage_rate(frame: pd.DataFrame, column: str) -> float:
         return 0.0
     values = frame[column]
     return float((values.notna() & values.astype(str).str.strip().ne("")).sum() / len(frame)) if len(frame) else 0.0
+
+
+def _target_column_coverage(frame: pd.DataFrame, column: str, min_year: int, max_year: int) -> float:
+    """Return coverage against expected province-year cells for the target window."""
+
+    if frame.empty or column not in frame.columns or "province" not in frame.columns:
+        return 0.0
+    provinces = frame["province"].dropna().astype(str).str.strip()
+    province_count = int(provinces[provinces.ne("")].nunique())
+    expected = province_count * (int(max_year) - int(min_year) + 1)
+    if expected <= 0:
+        return 0.0
+    values = frame[column]
+    nonmissing = int((values.notna() & values.astype(str).str.strip().ne("")).sum())
+    return float(nonmissing / expected)
 
 
 def _nunique(frame: pd.DataFrame, column: str) -> int:
