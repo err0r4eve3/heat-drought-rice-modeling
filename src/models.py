@@ -10,7 +10,19 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 
-COEFFICIENT_COLUMNS = ["model", "term", "estimate", "n", "r2", "adjusted_r2"]
+COEFFICIENT_COLUMNS = [
+    "model",
+    "term",
+    "estimate",
+    "standard_error",
+    "p_value",
+    "conf_int_low",
+    "conf_int_high",
+    "n",
+    "n_obs",
+    "r2",
+    "adjusted_r2",
+]
 PREDICTION_COLUMNS = ["row_index", "admin_id", "year", "observed", "prediction", "residual"]
 OUTCOME_FALLBACK_CANDIDATES = (
     "province_rice_yield_anomaly",
@@ -46,6 +58,27 @@ def fit_simple_ols(rows: Iterable[dict[str, Any]], y: str, x_vars: Sequence[str]
         "r2": fit["r2"],
         "adjusted_r2": fit["adjusted_r2"],
     }
+
+
+def fit_two_way_fixed_effects(
+    rows: Iterable[dict[str, Any]],
+    outcome_field: str,
+    exposure_field: str,
+    admin_field: str,
+    year_field: str,
+    control_fields: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Fit province/admin and year fixed effects with statsmodels OLS."""
+
+    return _fit_statsmodels_with_fixed_effects(
+        rows=list(rows),
+        outcome_field=outcome_field,
+        term_fields=[exposure_field, *(control_fields or [])],
+        admin_field=admin_field,
+        year_field=year_field,
+        model_name="province_two_way_fixed_effects",
+        unavailable_context="fixed effects unavailable",
+    )
 
 
 def assign_treatment(
@@ -242,12 +275,32 @@ def run_modeling(
         _write_model_scope_report(scope_report_path, scope)
         return result
 
+    descriptive_fit = None
+    fixed_effects_fit = None
+    event_fit = None
     try:
         descriptive_fit = _fit_ols_with_predictions(model_rows, resolved_outcome_field, selected_x_vars)
         if descriptive_fit["n"] == 0:
             raise ValueError("No complete numeric rows are available for OLS.")
+        coefficient_rows = _coefficient_rows("descriptive_ols", descriptive_fit)
+        if _uses_province_fixed_effects(scope):
+            fixed_effects_fit = fit_two_way_fixed_effects(
+                rows=model_rows,
+                outcome_field=resolved_outcome_field,
+                exposure_field=resolved_exposure_field,
+                admin_field=resolved_admin_field,
+                year_field=year_field,
+                control_fields=[field for field in selected_x_vars if field != resolved_exposure_field],
+            )
+            warnings.extend(fixed_effects_fit.get("warnings", []))
+            if fixed_effects_fit.get("unavailable"):
+                warnings.append("Skipped province two-way fixed effects because fixed effects unavailable.")
+            else:
+                coefficient_rows.extend(
+                    _coefficient_rows("province_two_way_fixed_effects", fixed_effects_fit)
+                )
         _write_coefficient_rows(
-            _coefficient_rows(scope.get("primary_model_name", "descriptive_ols"), descriptive_fit),
+            coefficient_rows,
             coefficient_path,
         )
         _write_prediction_rows(
@@ -257,24 +310,39 @@ def run_modeling(
             year_field=year_field,
         )
         if scope["run_event_study"]:
-            event_fit = _fit_event_study(
-                rows=rows,
-                outcome_field=resolved_outcome_field,
-                exposure_field=resolved_exposure_field,
-                year_field=year_field,
-                admin_field=resolved_admin_field,
-                event_year=event_year,
-                quantile=treatment_quantile,
-                window=event_window,
-                warnings=warnings,
-            )
+            if _uses_province_fixed_effects(scope):
+                event_fit = _fit_event_study_with_fixed_effects(
+                    rows=rows,
+                    outcome_field=resolved_outcome_field,
+                    exposure_field=resolved_exposure_field,
+                    year_field=year_field,
+                    admin_field=resolved_admin_field,
+                    event_year=event_year,
+                    quantile=treatment_quantile,
+                    window=event_window,
+                    warnings=warnings,
+                )
+                event_model_name = "event_study_candidate"
+            else:
+                event_fit = _fit_event_study(
+                    rows=rows,
+                    outcome_field=resolved_outcome_field,
+                    exposure_field=resolved_exposure_field,
+                    year_field=year_field,
+                    admin_field=resolved_admin_field,
+                    event_year=event_year,
+                    quantile=treatment_quantile,
+                    window=event_window,
+                    warnings=warnings,
+                )
+                event_model_name = "event_study"
         else:
             warnings.append(f"Skipped event-study coefficients because model scope is `{scope['model_scope']}`.")
-            event_fit = None
+            event_model_name = "event_study"
         if event_fit is None:
             _write_coefficient_rows([], event_path)
         else:
-            _write_coefficient_rows(_coefficient_rows("event_study", event_fit), event_path)
+            _write_coefficient_rows(_coefficient_rows(event_model_name, event_fit), event_path)
         status = "ok"
     except Exception as exc:  # noqa: BLE001 - modeling failures should not stop the pipeline
         warnings.append(f"Descriptive OLS failed: {type(exc).__name__}: {exc}")
@@ -289,7 +357,16 @@ def run_modeling(
         warnings=warnings,
         report_path=report_path,
     )
-    _write_model_report(result, panel_path, resolved_outcome_field, selected_x_vars, descriptive_fit, scope)
+    _write_model_report(
+        result,
+        panel_path,
+        resolved_outcome_field,
+        selected_x_vars,
+        descriptive_fit,
+        scope,
+        fixed_effects_fit=fixed_effects_fit,
+        event_fit=event_fit,
+    )
     _write_model_scope_report(scope_report_path, scope)
     return result
 
@@ -343,7 +420,7 @@ def _select_model_rows_for_scope(
 ) -> list[dict[str, Any]]:
     """Select rows for the allowed model scope."""
 
-    if scope.get("model_scope") != "cross_section_2022_intensity":
+    if scope.get("model_scope") not in {"cross_section_2022_intensity", "province_2022_cross_section_intensity"}:
         return rows
     selected = [row for row in rows if _coerce_int(row.get(year_field)) == int(event_year)]
     warnings.append(
@@ -362,7 +439,7 @@ def _resolve_exposure_field_for_scope(
     """Resolve exposure field according to annual/event coverage gates."""
 
     preferred: list[str] = []
-    if scope.get("model_scope") == "cross_section_2022_intensity":
+    if scope.get("model_scope") in {"cross_section_2022_intensity", "province_2022_cross_section_intensity"}:
         preferred.extend(["chd_2022_intensity", requested_field, "exposure_index"])
     elif scope.get("chd_annual_coverage_rate", 0.0) >= 0.75:
         preferred.extend(["chd_annual", requested_field, "exposure_index"])
@@ -398,6 +475,7 @@ def _load_model_scope(processed_dir: str | Path) -> dict[str, Any]:
             "admin_level": province_scope["admin_level"],
             "crop_type": province_scope["crop_type"],
             "year_coverage_rate": province_scope["year_coverage_rate"],
+            "outcome_type": province_scope["outcome_type"],
         }
     tier_id = str(tier.get("tier", "unknown"))
     coverage_rate = _coerce_float(tier.get("year_coverage_rate"))
@@ -406,7 +484,31 @@ def _load_model_scope(processed_dir: str | Path) -> dict[str, Any]:
     claim_gate = _evaluate_causal_claim_gate(processed, coverage_rate)
     exposure_scope = _load_exposure_scope(processed)
 
-    if tier_id == "tier_4":
+    admin_level = str(tier.get("admin_level", "unknown"))
+    outcome_type = str(tier.get("outcome_type", ""))
+    is_province_official_outcome = admin_level == "province" and outcome_type in {
+        "province_rice_yield_anomaly",
+        "province_grain_yield_anomaly",
+    }
+
+    if is_province_official_outcome:
+        if (
+            coverage_rate >= 0.75
+            and exposure_scope["chd_annual_coverage_rate"] >= 0.75
+            and exposure_scope["yield_anomaly_coverage_rate"] >= 0.75
+        ):
+            model_scope = "province_fixed_effects_and_event_study_candidate"
+            run_event_study = True
+            conclusion_strength = "quasi_causal" if claim_gate["passed"] else "impact_assessment"
+        elif exposure_scope["has_2022_intensity"] and exposure_scope["chd_annual_coverage_rate"] < 0.75:
+            model_scope = "province_2022_cross_section_intensity"
+            run_event_study = False
+            conclusion_strength = "association"
+        else:
+            model_scope = "province_descriptive_correlation_only"
+            run_event_study = False
+            conclusion_strength = "association"
+    elif tier_id == "tier_4":
         model_scope = "remote_sensing_growth_anomaly_analysis"
         run_event_study = False
         conclusion_strength = "descriptive"
@@ -441,6 +543,7 @@ def _load_model_scope(processed_dir: str | Path) -> dict[str, Any]:
         "tier_name": tier.get("tier_name", ""),
         "admin_level": tier.get("admin_level", "unknown"),
         "crop_type": tier.get("crop_type", "unknown"),
+        "outcome_type": tier.get("outcome_type", ""),
         "year_coverage_rate": coverage_rate,
         "model_scope": model_scope,
         "run_event_study": run_event_study,
@@ -679,10 +782,12 @@ def _primary_model_name(model_scope: str, admin_level: Any, crop_type: Any) -> s
 
     level = str(admin_level)
     crop = str(crop_type)
-    if model_scope == "cross_section_2022_intensity":
+    if model_scope in {"cross_section_2022_intensity", "province_2022_cross_section_intensity"}:
         if level == "province" and crop == "grain":
             return "province_grain_2022_cross_section"
         return "chd_2022_cross_section"
+    if model_scope == "province_fixed_effects_and_event_study_candidate":
+        return "province_two_way_fixed_effects"
     if model_scope == "fixed_effects_and_event_study":
         return "two_way_fixed_effects_candidate"
     return "descriptive_ols"
@@ -805,6 +910,226 @@ def _resolve_admin_field(rows: list[dict[str, Any]], requested_field: str, warni
             return candidate
     warnings.append(f"Admin field `{requested_field}` not found and no fallback panel unit field is usable.")
     return requested_field
+
+
+def _uses_province_fixed_effects(scope: dict[str, Any]) -> bool:
+    """Return True when the current scope permits the province two-way FE model."""
+
+    return scope.get("model_scope") == "province_fixed_effects_and_event_study_candidate"
+
+
+def _fit_statsmodels_with_fixed_effects(
+    rows: list[dict[str, Any]],
+    outcome_field: str,
+    term_fields: list[str],
+    admin_field: str,
+    year_field: str,
+    model_name: str,
+    unavailable_context: str,
+) -> dict[str, Any]:
+    """Fit OLS with admin and year fixed effects using sanitized formula columns."""
+
+    term_fields = [field for field in term_fields if field]
+    if not term_fields:
+        return _fixed_effects_unavailable_result(model_name, f"{unavailable_context}: no exposure fields.")
+    if not _fields_exist(rows, [outcome_field, admin_field, year_field, *term_fields]):
+        return _fixed_effects_unavailable_result(model_name, f"{unavailable_context}: required fields are missing.")
+
+    records: list[dict[str, Any]] = []
+    term_aliases = {field: f"_term_{index}" for index, field in enumerate(term_fields)}
+    for row in rows:
+        outcome = _coerce_float(row.get(outcome_field))
+        admin = str(row.get(admin_field) or "").strip()
+        year = _coerce_int(row.get(year_field))
+        if outcome is None or not admin or year is None:
+            continue
+        record: dict[str, Any] = {
+            "_outcome": outcome,
+            "_admin_fe": admin,
+            "_year_fe": str(year),
+        }
+        complete = True
+        for field, alias in term_aliases.items():
+            value = _coerce_float(row.get(field))
+            if value is None:
+                complete = False
+                break
+            record[alias] = value
+        if complete:
+            records.append(record)
+
+    if not records:
+        return _fixed_effects_unavailable_result(model_name, f"{unavailable_context}: no complete rows.")
+    if len({record["_admin_fe"] for record in records}) < 2:
+        return _fixed_effects_unavailable_result(model_name, f"{unavailable_context}: fewer than two admin units.")
+    if len({record["_year_fe"] for record in records}) < 2:
+        return _fixed_effects_unavailable_result(model_name, f"{unavailable_context}: fewer than two years.")
+
+    try:
+        import pandas as pd
+        import statsmodels.formula.api as smf
+    except ImportError as exc:
+        return _fixed_effects_unavailable_result(
+            model_name,
+            f"{unavailable_context}: statsmodels unavailable ({exc}).",
+        )
+
+    frame = pd.DataFrame.from_records(records)
+    formula_terms = [*term_aliases.values(), "C(_admin_fe)", "C(_year_fe)"]
+    formula = "_outcome ~ " + " + ".join(formula_terms)
+    try:
+        fitted = smf.ols(formula=formula, data=frame).fit()
+    except Exception as exc:  # noqa: BLE001 - optional FE model should not break the pipeline
+        return _fixed_effects_unavailable_result(
+            model_name,
+            f"{unavailable_context}: {type(exc).__name__}: {exc}",
+        )
+
+    params = fitted.params
+    standard_errors = fitted.bse
+    p_values = fitted.pvalues
+    conf_int = fitted.conf_int()
+    coefficients: dict[str, float | None] = {}
+    standard_error_by_term: dict[str, float | None] = {}
+    p_value_by_term: dict[str, float | None] = {}
+    conf_int_by_term: dict[str, tuple[float | None, float | None]] = {}
+    for field, alias in term_aliases.items():
+        coefficients[field] = _finite_float_or_none(params.get(alias))
+        standard_error_by_term[field] = _finite_float_or_none(standard_errors.get(alias))
+        p_value_by_term[field] = _finite_float_or_none(p_values.get(alias))
+        if alias in conf_int.index:
+            low = _finite_float_or_none(conf_int.loc[alias].iloc[0])
+            high = _finite_float_or_none(conf_int.loc[alias].iloc[1])
+        else:
+            low = None
+            high = None
+        conf_int_by_term[field] = (low, high)
+
+    primary_term = term_fields[0]
+    rank = getattr(fitted.model, "rank", None)
+    parameter_count = len(params)
+    return {
+        "model_name": model_name,
+        "n": int(fitted.nobs),
+        "n_obs": int(fitted.nobs),
+        "coefficients": coefficients,
+        "standard_errors": standard_error_by_term,
+        "p_values": p_value_by_term,
+        "conf_int": conf_int_by_term,
+        "coefficient": coefficients.get(primary_term),
+        "standard_error": standard_error_by_term.get(primary_term),
+        "p_value": p_value_by_term.get(primary_term),
+        "conf_int_low": conf_int_by_term.get(primary_term, (None, None))[0],
+        "conf_int_high": conf_int_by_term.get(primary_term, (None, None))[1],
+        "r2": _finite_float_or_none(fitted.rsquared),
+        "adjusted_r2": _finite_float_or_none(fitted.rsquared_adj),
+        "unavailable": False,
+        "rank_deficient": rank is not None and int(rank) < parameter_count,
+        "warnings": [],
+    }
+
+
+def _fixed_effects_unavailable_result(model_name: str, warning: str) -> dict[str, Any]:
+    """Return a consistent result when fixed effects cannot be estimated."""
+
+    return {
+        "model_name": model_name,
+        "n": 0,
+        "n_obs": 0,
+        "coefficients": {},
+        "standard_errors": {},
+        "p_values": {},
+        "conf_int": {},
+        "coefficient": None,
+        "standard_error": None,
+        "p_value": None,
+        "conf_int_low": None,
+        "conf_int_high": None,
+        "r2": None,
+        "adjusted_r2": None,
+        "unavailable": True,
+        "rank_deficient": False,
+        "warnings": [warning],
+    }
+
+
+def _fit_event_study_with_fixed_effects(
+    rows: list[dict[str, Any]],
+    outcome_field: str,
+    exposure_field: str,
+    year_field: str,
+    admin_field: str,
+    event_year: int,
+    quantile: float,
+    window: int,
+    warnings: list[str],
+) -> dict[str, Any] | None:
+    """Fit event-study treatment-time indicators with admin and year fixed effects."""
+
+    if not _fields_exist(rows, [outcome_field, exposure_field, year_field, admin_field]):
+        warnings.append("Skipped event-study coefficients because required fields are missing.")
+        return None
+
+    treated_rows = assign_treatment(
+        rows,
+        exposure_field=exposure_field,
+        year_field=year_field,
+        admin_field=admin_field,
+        event_year=event_year,
+        quantile=quantile,
+    )
+    treatment_values = {
+        int(row.get("treatment", 0))
+        for row in treated_rows
+        if _coerce_int(row.get(year_field)) == int(event_year)
+    }
+    if len(treatment_values) < 2:
+        warnings.append("Skipped event-study coefficients because treatment has no variation.")
+        return None
+
+    if not any(
+        int(row.get("treatment", 0)) == 1
+        and (year := _coerce_int(row.get(year_field))) is not None
+        and year < int(event_year)
+        for row in treated_rows
+    ):
+        warnings.append("Skipped event-study coefficients because treated units have no pre-event observations.")
+        return None
+
+    event_rows = build_event_study_terms(
+        treated_rows,
+        treatment_field="treatment",
+        year_field=year_field,
+        event_year=event_year,
+        window=window,
+    )
+    terms = [_event_term_name(offset) for offset in range(-int(window), int(window) + 1)]
+    reference_term = _event_term_name(-1 if int(window) >= 1 else 0)
+    varying_terms = [
+        term
+        for term in terms
+        if term != reference_term and any(_coerce_float(row.get(term)) for row in event_rows)
+    ]
+    if not varying_terms:
+        warnings.append("Skipped event-study coefficients because no treated event-window observations were found.")
+        return None
+
+    fit = _fit_statsmodels_with_fixed_effects(
+        rows=event_rows,
+        outcome_field=outcome_field,
+        term_fields=varying_terms,
+        admin_field=admin_field,
+        year_field=year_field,
+        model_name="event_study_candidate",
+        unavailable_context="event-study fixed effects unavailable",
+    )
+    warnings.extend(fit.get("warnings", []))
+    if fit.get("unavailable"):
+        return None
+    if fit.get("rank_deficient"):
+        warnings.append("Skipped event-study coefficients because the fixed-effects design matrix is rank deficient.")
+        return None
+    return fit
 
 
 def _fit_event_study(
@@ -1086,6 +1411,16 @@ def _coerce_float(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def _finite_float_or_none(value: Any) -> float | None:
+    """Return a finite float or None for model-result metadata."""
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def _coerce_int(value: Any) -> int | None:
     """Coerce a value to int when it represents a numeric year."""
 
@@ -1137,12 +1472,20 @@ def _write_empty_model_outputs(coefficient_path: Path, prediction_path: Path, ev
 def _coefficient_rows(model_name: str, fit: dict[str, Any]) -> list[dict[str, Any]]:
     """Convert an OLS fit dictionary to coefficient CSV rows."""
 
+    standard_errors = fit.get("standard_errors", {})
+    p_values = fit.get("p_values", {})
+    conf_int = fit.get("conf_int", {})
     return [
         {
             "model": model_name,
             "term": term,
             "estimate": estimate,
+            "standard_error": standard_errors.get(term),
+            "p_value": p_values.get(term),
+            "conf_int_low": conf_int.get(term, (None, None))[0],
+            "conf_int_high": conf_int.get(term, (None, None))[1],
             "n": fit["n"],
+            "n_obs": fit.get("n_obs", fit["n"]),
             "r2": fit["r2"],
             "adjusted_r2": fit["adjusted_r2"],
         }
@@ -1207,6 +1550,8 @@ def _write_model_report(
     x_vars: list[str],
     fit: dict[str, Any] | None,
     scope: dict[str, Any],
+    fixed_effects_fit: dict[str, Any] | None = None,
+    event_fit: dict[str, Any] | None = None,
 ) -> None:
     """Write a Markdown summary for the modeling step."""
 
@@ -1258,6 +1603,46 @@ def _write_model_report(
             for term, estimate in fit["coefficients"].items()
         )
         lines.append("")
+
+    if fixed_effects_fit is not None:
+        lines.extend(["## Province Two-Way Fixed Effects", ""])
+        if fixed_effects_fit.get("unavailable"):
+            lines.extend(["- Status: fixed effects unavailable", ""])
+        else:
+            lines.extend(
+                [
+                    f"- Complete rows: {fixed_effects_fit['n']}",
+                    f"- R-squared: {_format_report_number(fixed_effects_fit['r2'])}",
+                    f"- Adjusted R-squared: {_format_report_number(fixed_effects_fit['adjusted_r2'])}",
+                    "",
+                    "| Term | Estimate | Std. Error | P-value | CI Low | CI High |",
+                    "| --- | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for term, estimate in fixed_effects_fit["coefficients"].items():
+                ci_low, ci_high = fixed_effects_fit.get("conf_int", {}).get(term, (None, None))
+                lines.append(
+                    "| `{term}` | {estimate} | {stderr} | {pvalue} | {ci_low} | {ci_high} |".format(
+                        term=term,
+                        estimate=_format_report_number(estimate),
+                        stderr=_format_report_number(fixed_effects_fit.get("standard_errors", {}).get(term)),
+                        pvalue=_format_report_number(fixed_effects_fit.get("p_values", {}).get(term)),
+                        ci_low=_format_report_number(ci_low),
+                        ci_high=_format_report_number(ci_high),
+                    )
+                )
+            lines.append("")
+
+    if event_fit is not None:
+        lines.extend(["## Event Study Candidate", ""])
+        lines.extend(
+            [
+                f"- Complete rows: {event_fit['n']}",
+                f"- R-squared: {_format_report_number(event_fit['r2'])}",
+                f"- Adjusted R-squared: {_format_report_number(event_fit['adjusted_r2'])}",
+                "",
+            ]
+        )
 
     if result.outputs:
         lines.extend(["## Outputs", ""])

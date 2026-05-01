@@ -52,3 +52,33 @@ def test_ensure_project_dirs_creates_expected_directories(tmp_path: Path) -> Non
     assert config.data_interim_dir.exists()
     assert config.data_processed_dir.exists()
     assert config.output_dir.exists()
+
+
+def test_research_scope_config_semantics() -> None:
+    config = load_config(Path("config/config.yaml"))
+    raw = config.raw
+
+    assert raw["research_scope"]["main_admin_level"] == "province"
+    assert "prefecture" in raw["research_scope"]["disabled_admin_levels_for_yield_model"]
+    assert "county" in raw["research_scope"]["disabled_admin_levels_for_yield_model"]
+
+
+def test_study_region_config_semantics() -> None:
+    config = load_config(Path("config/config.yaml"))
+    regions = config.raw["study_region_policy"]["regions"]
+
+    assert "yangtze_middle_lower" in regions
+    provinces = regions["yangtze_middle_lower"]["provinces"]
+    for province in ["上海市", "江苏省", "浙江省", "安徽省", "江西省", "湖北省", "湖南省"]:
+        assert province in provinces
+    assert config.raw["study_region_policy"]["main_model_region"] == "national_control"
+    assert config.raw["study_region_policy"]["highlighted_region"] == "yangtze_middle_lower"
+
+
+def test_outcome_and_model_policy_semantics() -> None:
+    config = load_config(Path("config/config.yaml"))
+
+    assert config.raw["outcome_policy"]["allow_prefecture_yield"] is False
+    assert config.raw["outcome_policy"]["allow_county_yield"] is False
+    assert config.raw["model_policy"]["main_model_admin_level"] == "province"
+    assert config.raw["model_policy"]["min_panel_coverage_for_fe"] == 0.75

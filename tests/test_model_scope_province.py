@@ -7,6 +7,57 @@ from pathlib import Path
 import pandas as pd
 
 
+def test_complete_province_panel_allows_fixed_effects_candidate(tmp_path: Path) -> None:
+    from src.models import run_modeling
+
+    processed = tmp_path / "data" / "processed"
+    outputs = tmp_path / "data" / "outputs"
+    reports = tmp_path / "reports"
+    processed.mkdir(parents=True)
+
+    rows = []
+    provinces = [("Alpha", "110000"), ("Beta", "120000"), ("Gamma", "130000"), ("Delta", "140000")]
+    for province_index, (province, code) in enumerate(provinces):
+        for year in range(2000, 2025):
+            chd = ((year - 2000) % 5) + province_index * 0.25
+            outcome = 0.3 * chd + province_index + (year - 2000) * 0.05
+            rows.append(
+                {
+                    "province": province,
+                    "province_code": code,
+                    "year": year,
+                    "outcome_type": "province_grain_yield_anomaly",
+                    "province_grain_yield_anomaly": outcome,
+                    "yield_anomaly_pct": outcome,
+                    "chd_annual": chd,
+                    "chd_2022_intensity": 10 + province_index if year == 2022 else "",
+                }
+            )
+    pd.DataFrame(rows).to_csv(processed / "province_model_panel.csv", index=False)
+
+    result = run_modeling(
+        model_panel=processed / "province_model_panel.csv",
+        output_dir=outputs,
+        reports_dir=reports,
+        event_year=2022,
+        processed_dir=processed,
+        outcome_field="yield_anomaly",
+        exposure_field="chd_annual",
+        admin_field="province",
+        event_window=1,
+    )
+
+    scope_text = (reports / "model_scope_decision.md").read_text(encoding="utf-8")
+    report_text = result.report_path.read_text(encoding="utf-8")
+
+    assert result.status == "ok"
+    assert "province_fixed_effects_and_event_study_candidate" in scope_text
+    assert "descriptive_correlation_only" not in scope_text
+    assert "Event study allowed: True" in scope_text
+    assert "Conclusion strength: `impact_assessment`" in scope_text
+    assert "province_fixed_effects_and_event_study_candidate" in report_text
+
+
 def test_modeling_cli_defaults_to_province_model_panel(tmp_path: Path) -> None:
     processed = tmp_path / "data" / "processed"
     outputs = tmp_path / "data" / "outputs"
