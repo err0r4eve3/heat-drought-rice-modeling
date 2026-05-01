@@ -1,13 +1,14 @@
-# 复合热旱冲击与长江中下游稻作单产稳定性
+# 省域复合热旱暴露与长江中下游粮食/稻谷单产异常
 
-本项目用于统计建模大赛的可复现数据处理与建模框架。MVP 聚焦 2022 年长江中下游极端高温干旱事件，并预留 2024 年伏秋旱作为验证事件。
+本项目用于统计建模大赛的可复现数据处理与建模框架。当前研究口径已降级为：省级官方产量面板负责产量结论，县域/栅格遥感和气象数据负责暴露、长势和机制分析；MVP 聚焦 2022 年长江中下游极端高温干旱事件，并预留 2024 年伏秋旱作为外部验证事件。
 
 ## 项目目标
 
 - 扫描 `data/raw/`，生成可检查的数据清单。
-- 将气象、遥感、稻田掩膜、行政区划和农业统计数据整理到同一行政单元面板。
-- 构造复合热旱暴露指数、单产异常和稳定性指标。
-- 输出固定效应模型、事件研究、稳健性检查、图表和 Markdown 摘要。
+- 将气象、遥感、稻田掩膜和农业统计数据整理为省级主模型面板。
+- 构造省级稻田加权复合热旱暴露、省级官方单产异常和稳定性指标。
+- 县域、地级市和栅格尺度只输出暴露差异、遥感长势响应和机制分析，不输出官方产量损失结论。
+- 输出描述性相关模型、固定效应候选、事件研究候选、图表和 Markdown 摘要；结论强度默认是 impact assessment / association。
 
 ## 目录
 
@@ -63,6 +64,10 @@ uv run python scripts/14_research_required_data_sources.py --config config/confi
 uv run python scripts/16_download_yield_proxy_rasters.py --config config/config.yaml
 uv run python scripts/17_assign_admin_provinces.py --config config/config.yaml
 uv run python scripts/15_build_yield_proxy_panel.py --config config/config.yaml
+uv run python scripts/16_build_annual_exposure_panel.py --config config/config.yaml
+uv run python scripts/17_import_manual_yield_panel.py --config config/config.yaml
+uv run python scripts/19_build_province_chd_panel.py --config config/config.yaml
+uv run python scripts/18_build_province_panel.py --config config/config.yaml
 uv run python scripts/07_build_indices.py --config config/config.yaml
 uv run python scripts/08_modeling.py --config config/config.yaml
 uv run python scripts/09_make_figures.py --config config/config.yaml
@@ -110,6 +115,10 @@ uv run python scripts/11_generate_report.py --config config/config.yaml
 - `data/processed/admin_crosswalk_low_confidence.csv`
 - `data/raw/references/yield_proxy_download_manifest.csv`
 - `data/processed/admin_units_with_province.gpkg`
+- `data/processed/province_chd_panel.csv`
+- `data/processed/province_chd_panel.parquet`
+- `data/processed/province_model_panel.csv`
+- `data/processed/province_model_panel.parquet`
 - `data/processed/model_panel.csv`
 - `data/outputs/model_coefficients.csv`
 - `data/outputs/event_study_coefficients.csv`
@@ -143,6 +152,8 @@ uv run python scripts/11_generate_report.py --config config/config.yaml
 - `reports/yield_proxy_panel_summary.md`
 - `reports/yield_proxy_download_summary.md`
 - `reports/admin_province_assignment_summary.md`
+- `reports/province_chd_panel_summary.md`
+- `reports/province_panel_summary.md`
 - `reports/project_risk_assessment.md`
 - `reports/unavoidable_risks_for_research.md`
 - `reports/pipeline_run_summary.md`
@@ -150,25 +161,25 @@ uv run python scripts/11_generate_report.py --config config/config.yaml
 
 ## 当前完成度
 
-MVP 已覆盖完整 pipeline 的空数据可运行路径，并已固化数据源深度检索目录。当前关键风险是县/市级 2000-2024 内容年份水稻单产面板没有完整公开直链，需通过地方统计年鉴、统计公报 PDF/Excel 或授权数据库补齐；2025 只作全国/省级背景或补充说明。正式论文级空间叠加、固定效应估计和遥感栅格聚合需要在数据到位后继续增强。
+MVP 已覆盖完整 pipeline 的空数据可运行路径，并已固化数据源深度检索目录。当前关键事实是地级市/县级 2000-2024 内容年份官方稻谷或粮食单产连续面板不可得，因此主模型不再依赖市县级官方产量。正式产量结论限定在省级；2025 只作全国/省级背景或补充说明。
 
 ## 数据风险与降级策略
 
-当前研究口径固定为“影响评估 + 准因果识别尝试”，不默认强因果。模型和报告会读取 `yield_data_tier_report.csv`、`yield_coverage_report.csv` 和 `risk_register.csv` 自动决定能写到什么强度。
+当前研究口径固定为“省级官方产量面板 + 高分辨率遥感/气象暴露聚合 + 2022 事件影响评估”，不默认强因果。模型和报告会读取 `province_model_panel`、`province_chd_panel`、`yield_data_tier_report.csv`、`yield_coverage_report.csv` 和 `risk_register.csv` 自动决定能写到什么强度。
 
-最优数据路径：县级或地级市官方稻谷/水稻面积、产量、单产连续面板，主模型覆盖 2000-2024 内容年份，并能通过行政区划 crosswalk 映射到 2022 年边界；2025 仅用于全国/省级背景或补充说明。
+主模型路径：省级官方稻谷/水稻单产异常优先；若省级稻谷数据不可得，则使用省级粮食单产异常。主模型覆盖 2000-2024 内容年份；2025 仅用于全国/省级背景或补充说明。
 
-可接受路径：地级市官方粮食单产面板。若稻谷/水稻缺失但粮食覆盖足够，主模型降级为粮食单产异常，并在报告中声明 crop scope downgrade。
+空间暴露路径：ERA5-Land、CHIRPS、MODIS、SMAP、GLEAM 等栅格或县域结果按稻田面积优先加权到省级；没有稻田面积时退到行政面积或非加权均值，并在报告中说明。
 
-保底路径：省级官方产量 + 县/市级遥感暴露和长势异常。该路径只支持背景验证、稳健性和机制描述，不支持县级官方产量损失结论。
+子省级路径：县域、地级市和栅格尺度只用于热旱暴露差异、遥感长势异常和机制分析，不作为官方产量损失结论。
 
-不推荐路径：只用遥感代理直接声称官方产量损失。遥感代理只能用于长势异常、空间格局、机制和稳健性说明。
+禁止路径：不再构建 prefecture_yield_main_model、county_yield_main_model、county_level_yield_loss_map 或 prefecture_event_study；也不得用遥感代理直接声称官方产量损失。
 
 行政区划：主模型默认映射到 2022 年事件边界。`admin_crosswalk_2000_2025.csv` 用于统计数据跨年匹配，`admin_crosswalk_low_confidence.csv` 中 `match_confidence < 0.85` 的记录必须人工复核。
 
-2024 验证：默认只作为外部一致性验证或描述性对照；除非拿到可靠官方县/市级产量面板，否则不做县/市级产量损失估计、因果验证或恢复力结论。
+2024 验证：默认只作为外部一致性验证或描述性对照；若省级官方粮食/稻谷数据可得，可用于交叉验证，不做市县级官方产量损失结论。
 
-结论强度：默认影响评估；数据覆盖、处理组定义、平行趋势和区划匹配满足条件时才写“准因果证据”；任何情况下都不写“证明 2022 热旱导致单产下降”。
+结论强度：默认影响评估或相关性；省级面板覆盖、处理组定义、平行趋势、安慰剂和稳健性检验满足条件时，最高写“准因果证据”；任何情况下都不写“证明 2022 热旱导致单产下降”。
 
 ## 数据约束
 

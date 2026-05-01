@@ -13,6 +13,8 @@ from typing import Any, Iterable, Sequence
 COEFFICIENT_COLUMNS = ["model", "term", "estimate", "n", "r2", "adjusted_r2"]
 PREDICTION_COLUMNS = ["row_index", "admin_id", "year", "observed", "prediction", "residual"]
 OUTCOME_FALLBACK_CANDIDATES = (
+    "province_rice_yield_anomaly",
+    "province_grain_yield_anomaly",
     "yield_anomaly_pct",
     "yield_anomaly",
     "yield_kg_per_hectare",
@@ -162,7 +164,7 @@ def run_modeling(
         return result
 
     try:
-        rows = _read_csv_rows(panel_path)
+        rows = _read_table_rows(panel_path)
     except Exception as exc:  # noqa: BLE001 - report and empty outputs keep the pipeline moving
         warnings.append(f"Could not read model panel CSV {panel_path}: {type(exc).__name__}: {exc}")
         _write_empty_model_outputs(coefficient_path, prediction_path, event_path)
@@ -179,7 +181,7 @@ def run_modeling(
         return result
 
     if not rows:
-        warnings.append(f"Model panel CSV is empty: {panel_path}.")
+        warnings.append(f"Model panel table is empty: {panel_path}.")
         _write_empty_model_outputs(coefficient_path, prediction_path, event_path)
         result = ModelingResult(
             status="empty",
@@ -388,6 +390,15 @@ def _load_model_scope(processed_dir: str | Path) -> dict[str, Any]:
     coverage_path = processed / "yield_coverage_report.csv"
     tier = _read_first_row_csv(tier_path)
     coverage = _read_coverage_rows(coverage_path)
+    province_scope = _load_province_outcome_scope(processed)
+    if province_scope:
+        tier = {
+            "tier": province_scope["tier"],
+            "tier_name": province_scope["tier_name"],
+            "admin_level": province_scope["admin_level"],
+            "crop_type": province_scope["crop_type"],
+            "year_coverage_rate": province_scope["year_coverage_rate"],
+        }
     tier_id = str(tier.get("tier", "unknown"))
     coverage_rate = _coerce_float(tier.get("year_coverage_rate"))
     if coverage_rate is None:
@@ -465,6 +476,45 @@ def _read_first_row_csv(path: Path) -> dict[str, Any]:
     return dict(frame.iloc[0].to_dict())
 
 
+def _load_province_outcome_scope(processed: Path) -> dict[str, Any]:
+    """Load province model-panel metadata when the project has downgraded to province outcomes."""
+
+    frame = _read_first_existing_scope_table(
+        [
+            processed / "province_model_panel.parquet",
+            processed / "province_model_panel.csv",
+        ]
+    )
+    if frame.empty and not {
+        "outcome_type",
+        "province_rice_yield_anomaly",
+        "province_grain_yield_anomaly",
+    }.intersection(set(frame.columns)):
+        return {}
+    outcome_type = ""
+    if "outcome_type" in frame.columns:
+        values = frame["outcome_type"].dropna().astype(str).str.strip()
+        if not values.empty:
+            outcome_type = str(values.iloc[0])
+    if not outcome_type:
+        if _column_coverage(frame, "province_rice_yield_anomaly") > 0:
+            outcome_type = "province_rice_yield_anomaly"
+        else:
+            outcome_type = "province_grain_yield_anomaly"
+    crop_type = "rice" if outcome_type == "province_rice_yield_anomaly" else "grain"
+    coverage_rate = _column_coverage(frame, outcome_type)
+    if coverage_rate == 0.0:
+        coverage_rate = _column_coverage(frame, "yield_anomaly_pct")
+    return {
+        "tier": "tier_3",
+        "tier_name": "provincial_official_yield_panel",
+        "admin_level": "province",
+        "crop_type": crop_type,
+        "year_coverage_rate": coverage_rate,
+        "outcome_type": outcome_type,
+    }
+
+
 def _read_coverage_rows(path: Path) -> Any:
     """Read yield coverage report CSV."""
 
@@ -504,6 +554,8 @@ def _load_exposure_scope(processed: Path) -> dict[str, Any]:
 
     panel = _read_first_existing_scope_table(
         [
+            processed / "province_model_panel.parquet",
+            processed / "province_model_panel.csv",
             processed / "model_panel_study_region.csv",
             processed / "model_panel.csv",
         ]
@@ -520,7 +572,11 @@ def _load_exposure_scope(processed: Path) -> dict[str, Any]:
     if main.empty:
         main = panel
     chd_rate = _column_coverage(main, "chd_annual")
-    yield_rate = _column_coverage(main, "yield_anomaly_pct")
+    yield_rate = max(
+        _column_coverage(main, "yield_anomaly_pct"),
+        _column_coverage(main, "province_rice_yield_anomaly"),
+        _column_coverage(main, "province_grain_yield_anomaly"),
+    )
     if chd_rate == 0.0:
         chd_rate = _column_coverage(main, "exposure_index")
     has_2022 = _has_event_exposure(main, "chd_2022_intensity", 2022) or _has_event_exposure(main, "exposure_index", 2022)
@@ -543,6 +599,8 @@ def _read_first_existing_scope_table(paths: list[Path]) -> Any:
         if not path.exists():
             continue
         try:
+            if path.suffix.lower() == ".parquet":
+                return pd.read_parquet(path)
             return pd.read_csv(path, dtype=str, low_memory=False)
         except Exception:
             continue
@@ -614,6 +672,8 @@ def _outcome_label(admin_level: Any, crop_type: Any, tier_id: str) -> str:
         return "遥感代理长势异常"
     if level == "province" and crop == "grain":
         return "省级粮食单产异常"
+    if level == "province" and crop in {"rice", "early_rice", "single_rice", "middle_rice", "late_rice"}:
+        return "省级稻谷单产异常"
     if crop in {"rice", "early_rice", "single_rice", "middle_rice", "late_rice"}:
         return f"{level} 稻谷/水稻单产异常"
     if crop == "grain":
@@ -1019,6 +1079,20 @@ def _is_truthy(value: Any) -> bool:
     return str(value).strip().lower() in {"true", "yes", "y", "treated"}
 
 
+def _read_table_rows(path: Path) -> list[dict[str, Any]]:
+    """Read a CSV or Parquet model panel into dictionaries."""
+
+    if path.suffix.lower() == ".parquet":
+        import pandas as pd
+
+        frame = pd.read_parquet(path)
+        return [
+            {str(column): _format_csv_value(value) for column, value in row.items()}
+            for row in frame.to_dict(orient="records")
+        ]
+    return _read_csv_rows(path)
+
+
 def _read_csv_rows(path: Path) -> list[dict[str, Any]]:
     """Read a CSV file into dictionaries without pandas."""
 
@@ -1139,7 +1213,7 @@ def _write_model_report(
     if result.status == "missing":
         lines.extend(["No model panel CSV found.", ""])
     elif result.status == "empty":
-        lines.extend(["Model panel CSV is empty.", ""])
+        lines.extend(["Model panel table is empty.", ""])
 
     if fit is not None:
         lines.extend(
@@ -1214,7 +1288,7 @@ def _write_model_scope_report(path: Path, scope: dict[str, Any]) -> None:
         "",
         "## 2024 Validation Rule",
         "",
-        "- 2024 年只作为外部一致性验证或描述性对照，除非拿到可靠官方县/市级产量面板。",
+        "- 2024 年只作为外部一致性验证或描述性对照；若省级官方粮食/稻谷数据可得，可用于交叉验证。",
         "",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)

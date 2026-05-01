@@ -19,7 +19,7 @@ from src.models import run_modeling  # noqa: E402
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
 
-    parser = argparse.ArgumentParser(description="Run MVP descriptive modeling from model_panel.csv.")
+    parser = argparse.ArgumentParser(description="Run province-level descriptive modeling from province_model_panel.")
     parser.add_argument("--config", default="config/config.yaml", help="Path to config YAML.")
     parser.add_argument("--model-panel", default=None, help="Override model panel CSV path.")
     parser.add_argument("--output-dir", default=None, help="Override model output directory.")
@@ -45,7 +45,11 @@ def main() -> int:
     config = load_config(args.config)
     ensure_project_dirs(config)
 
-    default_panel = config.data_processed_dir / "model_panel_study_region.csv"
+    default_panel = config.data_processed_dir / "province_model_panel.parquet"
+    if not default_panel.exists():
+        default_panel = config.data_processed_dir / "province_model_panel.csv"
+    if not default_panel.exists():
+        default_panel = config.data_processed_dir / "model_panel_study_region.csv"
     if not default_panel.exists():
         default_panel = config.data_processed_dir / "model_panel.csv"
     model_panel = Path(args.model_panel).resolve() if args.model_panel else default_panel

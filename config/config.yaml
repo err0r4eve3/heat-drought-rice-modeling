@@ -6,7 +6,7 @@ output_dir: data/outputs
 
 study_area_name: 长江中下游稻作区
 study_bbox: [105, 24, 123, 35]
-target_admin_level: county
+target_admin_level: province
 
 study_region_policy:
   default_region: "yangtze_middle_lower"
@@ -31,8 +31,48 @@ study_region_policy:
         - "江苏省"
         - "浙江省"
         - "上海市"
-  filter_model_panel_to_study_region: true
+    national_control:
+      provinces: all
+  main_model_region: national_control
+  highlighted_region: yangtze_middle_lower
+  filter_figures_to_highlighted_region: true
+  filter_model_panel_to_study_region: false
   allow_national_background_only: true
+
+research_scope:
+  main_admin_level: province
+  disabled_admin_levels_for_yield_model:
+    - prefecture
+    - county
+  sub_province_allowed_for:
+    - exposure_mapping
+    - remote_sensing_response
+    - mechanism_analysis
+  forbidden_outputs:
+    - county_level_official_yield_loss_map
+    - prefecture_level_yield_loss_claim
+    - city_county_causal_claim
+
+outcome_policy:
+  preferred_outcomes:
+    - province_rice_yield_anomaly
+    - province_grain_yield_anomaly
+    - province_remote_sensing_growth_anomaly
+  fallback_outcome: province_grain_yield_anomaly
+  allow_prefecture_yield: false
+  allow_county_yield: false
+  allow_remote_sensing_proxy_for_official_yield_loss: false
+
+model_policy:
+  main_model_admin_level: province
+  allow_fixed_effects: true
+  allow_event_study: true
+  allow_cross_section_2022: true
+  min_panel_coverage_for_fe: 0.75
+  min_pre_event_years_for_event_study: 5
+  causal_claim_default: impact_assessment
+  max_claim_without_gate: association
+  max_claim_with_gate: quasi_causal_evidence
 
 crs_wgs84: EPSG:4326
 crs_equal_area: EPSG:6933
@@ -71,10 +111,11 @@ research_design:
   forbidden_claims:
     - "strong_causal_claim_without_valid_identification"
     - "county_level_full_coverage_if_data_missing"
+    - "prefecture_or_county_yield_main_model_without_official_panel"
   preferred_admin_level_order:
+    - province
     - prefecture
     - county
-    - province
   preferred_crop_order:
     - rice
     - grain
@@ -168,9 +209,10 @@ external_data_access:
     needs_subscription: true
 
 yield_source_priority:
+  - provincial_rice_panel
+  - provincial_grain_panel
   - official_prefecture_or_county_rice_panel_2000_2024
   - official_prefecture_or_county_grain_panel_2000_2024
-  - provincial_rice_panel
   - local_yearbook_pdf_or_excel
   - cnki_yearbook_database
   - eps_county_database
@@ -179,14 +221,16 @@ yield_source_priority:
 
 yield_policy:
   preferred_admin_level_order:
+    - province
     - prefecture
     - county
-    - province
   preferred_crop_order:
     - rice
     - grain
   min_coverage_for_main_model: 0.75
   min_coverage_for_exploratory_model: 0.50
+  allow_prefecture_yield: false
+  allow_county_yield: false
   allow_remote_sensing_proxy_for_yield_loss_claim: false
 
 validation_2024_policy:

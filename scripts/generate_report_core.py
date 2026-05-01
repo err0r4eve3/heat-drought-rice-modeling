@@ -76,10 +76,18 @@ def _load_project_tables(processed: Path, interim: Path, outputs: Path) -> dict[
         "yield_tier": _read_table(processed / "yield_data_tier_report.csv"),
         "yield_coverage": _read_table(processed / "yield_coverage_report.csv"),
         "admin_crosswalk": _read_table(processed / "admin_crosswalk_2000_2025.csv"),
-        "model": _read_table(processed / "model_panel.csv"),
+        "model": _read_first_existing_table(
+            [
+                processed / "province_model_panel.parquet",
+                processed / "province_model_panel.csv",
+                processed / "model_panel.csv",
+            ]
+        ),
         "model_study_region": _read_table(processed / "model_panel_study_region.csv"),
         "annual_exposure": _read_first_existing_table(
             [
+                processed / "province_chd_panel.parquet",
+                processed / "province_chd_panel.csv",
                 processed / "annual_exposure_panel.parquet",
                 processed / "annual_exposure_panel.csv",
             ]
@@ -159,6 +167,11 @@ def _build_summary(tables: dict[str, Any], main_event_year: int, main_year_min: 
         "exposure_nonmissing": _non_missing_count(model, "exposure_index"),
         "model_main_yield_anomaly_nonmissing": _non_missing_count(model_main, "yield_anomaly_pct"),
         "model_main_exposure_nonmissing": _non_missing_count(model_main, "exposure_index"),
+        "province_model_rows": len(model),
+        "province_model_outcome_type": _first_text(model, "outcome_type"),
+        "province_rice_anomaly_nonmissing": _non_missing_count(model_main, "province_rice_yield_anomaly"),
+        "province_grain_anomaly_nonmissing": _non_missing_count(model_main, "province_grain_yield_anomaly"),
+        "province_chd_nonmissing": _non_missing_count(model_main, "chd_annual"),
         "model_study_region_rows": len(model_study_region),
         "model_study_region_province_count": _nunique(model_study_region, "province"),
         "model_study_region_chd_annual_nonmissing": _non_missing_count(model_study_region, "chd_annual"),
@@ -224,6 +237,14 @@ def _render_final_report(summary: dict[str, Any], outputs: Path, main_event_year
         "",
         *_format_scope_statement(summary),
         "",
+        "## 4b. 为什么采用省级产量口径",
+        "",
+        "- 地级市/县级官方稻谷或粮食 2000-2024 连续面板不可得，不能再作为主模型依赖。",
+        "- 本文主模型使用省级官方产量统计，官方产量结论和单产异常结论均限定在省级尺度。",
+        "- 县域和栅格尺度结果仅用于热旱暴露和遥感响应分析，不用于官方产量损失结论。",
+        "- 研究结论默认为影响评估或相关性分析，不作强因果表述。",
+        f"- 当前自动题目建议：{_suggest_title(summary)}",
+        "",
         "## 5. 产量面板摘要",
         "",
         f"- 合并产量面板行数：{_fmt_int(summary['yield_rows'])}",
@@ -242,14 +263,17 @@ def _render_final_report(summary: dict[str, Any], outputs: Path, main_event_year
         "",
         "## 7. 模型面板与核心变量",
         "",
-        f"- `model_panel.csv` 行数（含背景/可选年份）：{_fmt_int(summary['model_rows'])}",
+        f"- `province_model_panel` 行数（含背景/可选年份）：{_fmt_int(summary['model_rows'])}",
         f"- 主模型年份过滤后行数：{_fmt_int(summary['model_main_rows'])}",
         f"- `model_panel_study_region.csv` 行数：{_fmt_int(summary['model_study_region_rows'])}",
         f"- 研究区省级单元数：{_fmt_int(summary['model_study_region_province_count'])}",
         f"- 模型面板样本年份（含背景/可选年份）：{_format_content_year_range(summary['model_year_min'], summary['model_year_max'])}",
         f"- 省级单元数：{_fmt_int(summary['model_province_count'])}",
-        f"- 主模型 yield_anomaly_pct 非空：{_fmt_int(summary['model_main_yield_anomaly_nonmissing'])}/{_fmt_int(summary['model_main_rows'])} 行",
-        f"- 主模型 exposure_index 非空：{_fmt_int(summary['model_main_exposure_nonmissing'])}/{_fmt_int(summary['model_main_rows'])} 行",
+        f"- 省级稻谷单产异常非空：{_fmt_int(summary['province_rice_anomaly_nonmissing'])}/{_fmt_int(summary['model_main_rows'])} 行",
+        f"- 省级粮食单产异常非空：{_fmt_int(summary['province_grain_anomaly_nonmissing'])}/{_fmt_int(summary['model_main_rows'])} 行",
+        f"- yield_anomaly_pct 非空：{_fmt_int(summary['model_main_yield_anomaly_nonmissing'])}/{_fmt_int(summary['model_main_rows'])} 行",
+        f"- 主模型 chd_annual 非空：{_fmt_int(summary['province_chd_nonmissing'])}/{_fmt_int(summary['model_main_rows'])} 行",
+        f"- 旧 exposure_index 非空：{_fmt_int(summary['model_main_exposure_nonmissing'])}/{_fmt_int(summary['model_main_rows'])} 行",
         f"- 研究区 chd_annual 非空：{_fmt_int(summary['model_study_region_chd_annual_nonmissing'])}/{_fmt_int(summary['model_study_region_rows'])} 行",
         f"- 研究区 chd_2022_intensity 非空：{_fmt_int(summary['model_study_region_chd_2022_nonmissing'])}/{_fmt_int(summary['model_study_region_rows'])} 行",
         f"- 暴露覆盖机器判定：`{summary['exposure_coverage_status'] or 'n/a'}`",
@@ -304,7 +328,7 @@ def _render_final_report(summary: dict[str, Any], outputs: Path, main_event_year
             f"- 访问方式：{_format_counts(summary['source_access_levels'])}",
             f"- 产量面板候选源：{_fmt_int(summary['yield_source_rows'])}",
             f"- critical 优先级源：{_fmt_int(summary['critical_source_rows'])}",
-            "- 结论：未找到完整公开县/市级 2000-2024 内容年份水稻单产面板；需要年鉴、地方 PDF/Excel 或授权数据库补齐。",
+            "- 结论：未找到完整公开县/市级 2000-2024 内容年份水稻单产面板；本项目已降级为省级官方产量主模型。",
             "- 详细检索报告见 `reports/deep_data_search_report.md`；机器可读目录见 `data/raw/references/deep_required_data_sources.csv`。",
             "",
             "## 13b. 农业统计来源缓存",
@@ -320,17 +344,17 @@ def _render_final_report(summary: dict[str, Any], outputs: Path, main_event_year
             "",
             "## 15. 主要数据缺口",
             "",
-            "- 县/市级 2000-2024 官方水稻单产面板仍不足；2025 只作全国/省级背景或补充说明。",
+            "- 县/市级 2000-2024 官方水稻单产面板仍不足，当前不再追补为主模型依赖；2025 只作全国/省级背景或补充说明。",
             "- 2024 伏秋旱验证事件仍需补齐气象、遥感和统计产量。",
             "- 县级稻田像元加权暴露仍需替代当前省级近似。",
             "",
             "## 16. 后续路线图",
             "",
-            "1. 优先补县/市级 2000-2024 内容年份水稻或粮食产量面板，来源可为地方统计年鉴、县域统计公报或付费年鉴库。",
-            "2. 扩展 2000-2024 气象与遥感网格，并做县级稻田像元加权聚合；2025 仅作为背景更新。",
-            "3. 建立行政区划跨年口径表，处理撤县设区、区划合并和代码变更。",
-            "4. 在暴露和产量都有多年覆盖后，重跑双向固定效应、事件研究和 2024 验证事件。",
-            "5. 将模型输出升级为论文表格格式，并为每个结果附样本筛选说明。",
+            "1. 维护省级官方稻谷/粮食产量面板，并将 2024 统计结果作为外部验证。",
+            "2. 扩展 2000-2024 气象与遥感网格，并做县域或栅格稻田加权暴露聚合。",
+            "3. 将县域/栅格输出限定为暴露、长势响应和机制分析。",
+            "4. 在省级面板、平行趋势、安慰剂和稳健性检查通过后，最多表述为准因果证据。",
+            "5. 将模型输出升级为论文表格格式，并为每个结果附样本筛选说明和结论强度门控。",
             "",
             "详细风险报告见 `reports/project_risk_assessment.md`。",
             "",
@@ -607,7 +631,7 @@ def _main_coefficient(frame: Any) -> str:
 
     if frame.empty or "term" not in frame.columns:
         return "缺失"
-    match = frame[frame["term"].astype(str) == "exposure_index"]
+    match = frame[frame["term"].astype(str).isin(["chd_annual", "chd_2022_intensity", "exposure_index"])]
     if match.empty:
         return "未估计"
     row = match.iloc[0]
@@ -634,6 +658,27 @@ def _first_row(frame: Any) -> dict[str, Any]:
     return dict(frame.iloc[0].to_dict())
 
 
+def _first_text(frame: Any, column: str) -> str:
+    """Return first non-empty text value from a DataFrame column."""
+
+    if frame.empty or column not in frame.columns:
+        return ""
+    values = frame[column].dropna().astype(str).str.strip()
+    values = values[values.ne("")]
+    return "" if values.empty else str(values.iloc[0])
+
+
+def _suggest_title(summary: dict[str, Any]) -> str:
+    """Return the report title suggested by the active outcome type."""
+
+    outcome_type = str(summary.get("province_model_outcome_type") or "")
+    if outcome_type == "province_rice_yield_anomaly" or summary.get("province_rice_anomaly_nonmissing", 0):
+        return "省域尺度复合热旱暴露对长江中下游稻谷单产异常与稳定性的影响——以 2022 年极端高温干旱事件为例"
+    if outcome_type == "province_grain_yield_anomaly" or summary.get("province_grain_anomaly_nonmissing", 0):
+        return "省域尺度复合热旱暴露对长江中下游粮食单产异常与稳定性的影响——以 2022 年极端高温干旱事件为例"
+    return "2022 年复合热旱事件下长江中下游稻作区遥感长势异常响应研究"
+
+
 def _format_scope_statement(summary: dict[str, Any]) -> list[str]:
     """Render research scope and data limitation statements."""
 
@@ -646,15 +691,16 @@ def _format_scope_statement(summary: dict[str, Any]) -> list[str]:
     forbidden = tier.get("forbidden_claim", "strong_causal_claim_without_valid_identification")
     uses_proxy = summary.get("yield_proxy_rows", 0) > 0
     return [
-        "- 主口径：影响评估 + 准因果识别尝试；不默认强因果。",
+        "- 主口径：省级官方产量面板 + 高分辨率遥感/气象暴露聚合 + 2022 事件影响评估。",
         "- 主模型内容年份：2000-2024；2025 只作全国/省级背景或补充说明。",
-        "- 默认统计单元：地级市优先，县级作为增强版本；若映射不稳，自动降级到更高层级。",
+        "- 默认统计单元：省份 × 年份；全国省级面板作为主模型样本，长江中下游作为重点展示区域。",
+        "- 县域、地级市和栅格尺度只用于暴露差异、遥感长势响应和机制分析。",
         f"- 当前产量数据层级：`{admin_level}`；作物口径：`{crop_type}`。",
         f"- 产量数据是否官方统计：{official}。",
         f"- 当前合并产量数据年份范围（含背景/可选年份）：{_format_content_year_range(summary.get('yield_year_min'), summary.get('yield_year_max'))}；主模型覆盖率按 2000-2024 计算：{_fmt_number(coverage)}。",
         f"- 产量覆盖报告行数：{_fmt_int(summary.get('yield_coverage_rows'))}。",
         f"- 行政区划跨年映射记录数：{_fmt_int(summary.get('admin_crosswalk_rows'))}；默认映射到 2022 年事件边界。",
-        f"- 是否使用遥感代理产量：{uses_proxy}。",
+        f"- 是否使用遥感代理长势分析：{uses_proxy}；遥感代理不得写成官方产量损失。",
         "- 2024 年只作为外部一致性验证或描述性对照，不作为主因果识别事件。",
         f"- 当前允许结论强度：`{conclusion_strength}`。",
         f"- 禁止表述：`{forbidden}`；不得写“证明 2022 热旱导致单产下降”。",

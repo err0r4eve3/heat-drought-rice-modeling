@@ -9,14 +9,14 @@ from pathlib import Path
 
 FIGURE_TITLES = {
     "study_area_map": "Study Area",
-    "drought_2022_map": "CHD Exposure in 2022",
-    "yield_anomaly_2022_map": "Yield Anomaly in 2022",
-    "ndvi_anomaly_2022_map": "NDVI Anomaly in 2022",
-    "chd_vs_yield_scatter": "CHD vs Yield Anomaly",
+    "province_chd_exposure_map": "Province CHD Exposure",
+    "province_yield_anomaly_map": "Province Yield Anomaly",
+    "yangtze_highlight_map": "Yangtze Middle-Lower Highlight",
+    "chd_vs_province_yield_scatter": "2022 CHD vs Province Yield Anomaly",
     "event_study_plot": "Event Study Coefficients",
     "recovery_map_2023_2024": "Recovery 2023-2024",
-    "variable_importance": "Variable Importance",
-    "missing_data_heatmap": "Missing Data Heatmap",
+    "county_or_grid_exposure_detail": "County/Grid CHD Exposure Detail",
+    "remote_sensing_growth_anomaly": "Remote-Sensing Growth Anomaly",
     "timeline_2022_event": "2022 Event Timeline",
 }
 
@@ -52,8 +52,8 @@ def make_figures(
     reports.mkdir(parents=True, exist_ok=True)
 
     warnings: list[str] = []
-    if not (processed / "model_panel.csv").exists() and not (processed / "model_panel.parquet").exists():
-        warnings.append("Model panel not found; generated placeholder figures.")
+    if not any((processed / name).exists() for name in ["province_model_panel.csv", "province_model_panel.parquet", "model_panel.csv", "model_panel.parquet"]):
+        warnings.append("Province model panel not found; generated placeholder figures.")
 
     generated: list[Path] = []
     try:
