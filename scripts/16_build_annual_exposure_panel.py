@@ -36,8 +36,7 @@ def main() -> int:
     ensure_project_dirs(config)
     panel_policy = config.raw.get("panel_policy", {})
     main_years = panel_policy.get("main_content_years", [config.baseline_years[0], config.validation_event_year])
-    region_policy = config.raw.get("study_region_policy", {})
-    region = region_policy.get("regions", {}).get(region_policy.get("default_region", ""), {})
+    study_provinces = _main_model_study_provinces(config.raw)
 
     logger.info("Building annual exposure panel.")
     result = build_annual_exposure_panel(
@@ -51,7 +50,7 @@ def main() -> int:
         rice_growth_months=config.rice_growth_months,
         heat_threshold_quantile=config.heat_threshold_quantile,
         drought_threshold_quantile=config.drought_threshold_quantile,
-        study_provinces=[str(value) for value in region.get("provinces", [])],
+        study_provinces=study_provinces,
     )
     for warning in result.warnings:
         logger.warning(warning)
@@ -60,6 +59,21 @@ def main() -> int:
     logger.info("chd_annual non-missing: {}", result.chd_nonmissing)
     logger.info("Report: {}", result.report_path)
     return 0
+
+
+def _main_model_study_provinces(raw_config: dict) -> list[str]:
+    """Return province filters for the main model region.
+
+    An empty list intentionally means no province filter.
+    """
+
+    region_policy = raw_config.get("study_region_policy", {})
+    region_name = region_policy.get("main_model_region") or region_policy.get("default_region", "")
+    region = region_policy.get("regions", {}).get(region_name, {})
+    provinces = region.get("provinces", [])
+    if isinstance(provinces, str):
+        return [] if provinces.strip().lower() == "all" else [provinces]
+    return [str(value) for value in provinces]
 
 
 if __name__ == "__main__":
