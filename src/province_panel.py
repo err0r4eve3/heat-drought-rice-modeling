@@ -16,6 +16,10 @@ PROVINCE_MODEL_COLUMNS = [
     "year",
     "outcome_type",
     "crop",
+    "source_id",
+    "source_name",
+    "source_type",
+    "is_backfill",
     "yield_kg_per_hectare",
     "province_rice_yield_anomaly",
     "province_grain_yield_anomaly",
@@ -134,11 +138,57 @@ def _load_yield_panel(processed: Path, warnings: list[str]) -> pd.DataFrame:
         processed / "model_panel.parquet",
         processed / "model_panel.csv",
     ]
+    primary = pd.DataFrame()
     for path in candidates:
         frame = _read_table(path, warnings)
         if not frame.empty:
-            return frame
-    return pd.DataFrame()
+            primary = frame
+            break
+    backfill = _read_first_existing_table(
+        [
+            processed / "province_grain_backfill_2008_2015_cleaned.parquet",
+            processed / "province_grain_backfill_2008_2015_cleaned.csv",
+        ],
+        warnings,
+    )
+    if primary.empty:
+        return backfill
+    if backfill.empty:
+        return primary
+    return _append_backfill_rows(primary, backfill)
+
+
+def _append_backfill_rows(primary: pd.DataFrame, backfill: pd.DataFrame) -> pd.DataFrame:
+    """Append official province-grain backfill rows while preserving existing observations."""
+
+    left = primary.copy()
+    right = backfill.copy()
+    if "yield_kg_per_hectare" not in right.columns and "yield_kg_ha" in right.columns:
+        right["yield_kg_per_hectare"] = right["yield_kg_ha"]
+    if "province_code" not in right.columns and "admin_code" in right.columns:
+        right["province_code"] = right["admin_code"]
+    if "is_backfill" not in left.columns:
+        left["is_backfill"] = False
+    if "is_backfill" not in right.columns:
+        right["is_backfill"] = True
+    for column in ["source_id", "source_name", "source_type"]:
+        if column not in left.columns:
+            left[column] = pd.NA
+        if column not in right.columns:
+            right[column] = pd.NA
+    columns = sorted(set(left.columns) | set(right.columns))
+    combined = pd.concat([left.reindex(columns=columns), right.reindex(columns=columns)], ignore_index=True)
+    for column in ["province", "province_code", "year", "crop"]:
+        if column not in combined.columns:
+            combined[column] = ""
+    combined["_has_yield"] = pd.to_numeric(
+        combined.get("yield_kg_per_hectare", pd.Series(pd.NA, index=combined.index)),
+        errors="coerce",
+    ).notna()
+    combined["_is_backfill_sort"] = combined["is_backfill"].astype(str).str.lower().isin({"true", "1", "yes"})
+    combined = combined.sort_values(["_has_yield", "_is_backfill_sort"], ascending=[False, True])
+    combined = combined.drop_duplicates(subset=["province", "province_code", "year", "crop"], keep="first")
+    return combined.drop(columns=["_has_yield", "_is_backfill_sort"])
 
 
 def _select_official_outcome(frame: pd.DataFrame, warnings: list[str], main_event_year: int = 2022) -> tuple[pd.DataFrame, str]:

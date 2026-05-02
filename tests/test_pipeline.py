@@ -21,6 +21,9 @@ def test_build_step_commands_contains_core_steps() -> None:
     assert commands["exposure-diagnosis"][-1] == "scripts/15_diagnose_exposure_coverage.py"
     assert commands["annual-exposure"][-1] == "scripts/16_build_annual_exposure_panel.py"
     assert commands["manual-yield"][-1] == "scripts/17_import_manual_yield_panel.py"
+    assert commands["province-daily-climate"][-1] == "scripts/20_import_province_daily_climate.py"
+    assert commands["province-daily-chd"][-1] == "scripts/21_build_province_chd_from_daily_climate.py"
+    assert commands["province-grain-backfill"][-1] == "scripts/22_import_province_grain_backfill.py"
     assert commands["risk-report"][-1] == "scripts/18_generate_risk_action_report.py"
 
 

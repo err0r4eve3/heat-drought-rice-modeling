@@ -499,7 +499,7 @@ def _load_model_scope(processed_dir: str | Path) -> dict[str, Any]:
         ):
             model_scope = "province_fixed_effects_and_event_study_candidate"
             run_event_study = True
-            conclusion_strength = "quasi_causal" if claim_gate["passed"] else "impact_assessment"
+            conclusion_strength = "quasi_causal_evidence" if claim_gate["passed"] else "impact_assessment"
         elif exposure_scope["has_2022_intensity"] and exposure_scope["chd_annual_coverage_rate"] < 0.75:
             model_scope = "province_2022_cross_section_intensity"
             run_event_study = False
@@ -520,7 +520,7 @@ def _load_model_scope(processed_dir: str | Path) -> dict[str, Any]:
     ):
         model_scope = "fixed_effects_and_event_study"
         run_event_study = True
-        conclusion_strength = "quasi_causal" if claim_gate["passed"] else "impact_assessment"
+        conclusion_strength = "quasi_causal_evidence" if claim_gate["passed"] else "impact_assessment"
     elif exposure_scope["has_2022_intensity"] and exposure_scope["chd_annual_coverage_rate"] < 0.75:
         model_scope = "cross_section_2022_intensity"
         run_event_study = False
@@ -890,7 +890,7 @@ def _coerce_bool(value: Any) -> bool:
 def _allowed_language(strength: str) -> str:
     """Return allowed model-result language for the current conclusion strength."""
 
-    if strength == "quasi_causal":
+    if strength == "quasi_causal_evidence":
         return "事件研究结果可表述为准因果识别支持，但必须附数据覆盖和区划匹配限制。"
     if strength == "impact_assessment":
         return "复合热旱暴露与单产异常下降显著相关；固定效应结果可作为影响评估。"

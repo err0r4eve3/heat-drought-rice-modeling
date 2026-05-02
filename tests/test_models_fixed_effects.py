@@ -62,6 +62,41 @@ def test_run_modeling_writes_province_fixed_effects_separately(tmp_path: Path) -
     assert "## Province Two-Way Fixed Effects" in report_text
 
 
+def test_run_modeling_uses_quasi_causal_evidence_only_after_all_claim_gates_pass(tmp_path: Path) -> None:
+    processed = tmp_path / "data" / "processed"
+    outputs = tmp_path / "data" / "outputs"
+    reports = tmp_path / "reports"
+    processed.mkdir(parents=True)
+    pd.DataFrame(_synthetic_province_panel()).to_csv(processed / "province_model_panel.csv", index=False)
+    pd.DataFrame(
+        [
+            {"gate": "yield_panel_coverage_gte_0_75", "passed": "true"},
+            {"gate": "pretrend_test_passed", "passed": "true"},
+            {"gate": "placebo_tests_passed", "passed": "true"},
+            {"gate": "robustness_direction_stable", "passed": "true"},
+            {"gate": "admin_crosswalk_match_rate_gte_0_90", "passed": "true"},
+            {"gate": "mechanism_remote_sensing_consistent", "passed": "true"},
+        ]
+    ).to_csv(processed / "causal_claim_gate_status.csv", index=False)
+
+    result = run_modeling(
+        model_panel=processed / "province_model_panel.csv",
+        output_dir=outputs,
+        reports_dir=reports,
+        event_year=2022,
+        processed_dir=processed,
+        outcome_field="yield_anomaly",
+        exposure_field="chd_annual",
+        admin_field="province",
+        event_window=1,
+    )
+
+    scope_text = (reports / "model_scope_decision.md").read_text(encoding="utf-8")
+
+    assert result.status == "ok"
+    assert "Conclusion strength: `quasi_causal_evidence`" in scope_text
+
+
 def _synthetic_province_panel() -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     provinces = [("Alpha", "110000"), ("Beta", "120000"), ("Gamma", "130000"), ("Delta", "140000")]

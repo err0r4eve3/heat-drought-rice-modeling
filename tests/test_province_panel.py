@@ -116,3 +116,43 @@ def test_build_province_model_panel_uses_grain_when_rice_lacks_event_year(tmp_pa
     assert set(panel["year"]) == {2020, 2021, 2022}
     assert panel["crop"].eq("grain").all()
     assert "Province rice yield panel lacks 2022 event-year coverage; using province grain yield anomaly." in report_text
+
+
+def test_build_province_model_panel_appends_grain_backfill_rows(tmp_path: Path) -> None:
+    processed = tmp_path / "data" / "processed"
+    reports = tmp_path / "reports"
+    processed.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"province": "Alpha", "province_code": "110000", "year": 2007, "crop": "grain", "yield_kg_per_hectare": 5000},
+            {"province": "Alpha", "province_code": "110000", "year": 2016, "crop": "grain", "yield_kg_per_hectare": 6200},
+        ]
+    ).to_csv(processed / "yield_panel_combined.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "province": "Alpha",
+                "province_code": "110000",
+                "year": 2008,
+                "crop": "grain",
+                "yield_kg_per_hectare": 5400,
+                "source_type": "official_yearbook",
+                "is_backfill": True,
+            }
+        ]
+    ).to_csv(processed / "province_grain_backfill_2008_2015_cleaned.csv", index=False)
+
+    build_province_model_panel(
+        processed_dir=processed,
+        reports_dir=reports,
+        main_year_min=2007,
+        main_year_max=2016,
+        baseline_years=(2007, 2016),
+        min_valid_observations=2,
+    )
+
+    panel = pd.read_csv(processed / "province_model_panel.csv")
+
+    assert set(panel["year"]) == {2007, 2008, 2016}
+    assert panel.loc[panel["year"].eq(2008), "is_backfill"].iloc[0] == True
+    assert panel.loc[panel["year"].eq(2008), "source_type"].iloc[0] == "official_yearbook"
