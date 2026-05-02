@@ -1,0 +1,9 @@
+﻿dataset,content_year,source_name,source_type,source_url,status,notes
+province_grain_backfill_2008_2015,2008,2009中国粮食年鉴：表4/5/6 2008年各地区粮食播种面积/总产量/单位面积产量,yearbook_lead,https://www.zgtjnj.org/navipage-n2010090507000222.html,待补,未定位到可直接抽取的完整官方省级表；需从年鉴或官方页面图片/Excel补录。
+province_grain_backfill_2008_2015,2009,中国统计年鉴2010/中国粮食年鉴2010：需补省级粮食面积、单产、产量,needs_yearbook,,待补,未定位到可直接抽取的完整官方省级表；需从年鉴或官方页面图片/Excel补录。
+province_grain_backfill_2008_2015,2010,国家统计局关于2010年粮食产量的公告（未定位到完整省级表，需年鉴补）,lead_needs_yearbook,https://fsou.com/html/text/chl/1413/141396.html,待补,未定位到可直接抽取的完整官方省级表；需从年鉴或官方页面图片/Excel补录。
+province_grain_backfill_2008_2015,2011,Bulletin on the National Grain Output in 2011 / 法搜转引完整表,official_partial_with_mirror_table,https://www.stats.gov.cn/english/NewsEvents/201112/t20111205_26536.html,已录入,该年已在 partial CSV 中填入省级粮食面积/单产/产量。
+province_grain_backfill_2008_2015,2012,国家统计局关于2012年粮食产量数据的公告（中国发展门户网转引，官方 gov.cn 页面表格为图片）,official_mirror,https://cn.chinagate.cn/economics/2012-12/03/content_27291108.htm,已录入,该年已在 partial CSV 中填入省级粮食面积/单产/产量。
+province_grain_backfill_2008_2015,2013,国家统计局关于2013年粮食产量的公告,official,https://www.stats.gov.cn/sj/zxfb/202302/t20230203_1898413.html,已录入,该年已在 partial CSV 中填入省级粮食面积/单产/产量。
+province_grain_backfill_2008_2015,2014,国家统计局关于2014年粮食产量的公告,official,https://www.stats.gov.cn/sj/zxfb/202302/t20230203_1898640.html,已录入,该年已在 partial CSV 中填入省级粮食面积/单产/产量。
+province_grain_backfill_2008_2015,2015,国家统计局关于2015年粮食产量的公告,official,https://www.stats.gov.cn/sj/zxfb/202302/t20230203_1898979.html,已录入,该年已在 partial CSV 中填入省级粮食面积/单产/产量。

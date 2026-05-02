@@ -1,89 +1,96 @@
-// Export province-level daily tmax and precipitation for 2000-2024.
+// GEE export: province_daily_climate_2000_2024.csv
+// Purpose: generate province × date table with tmax_c and precipitation_mm.
+// Data sources:
+// - ERA5-Land Daily Aggregated: ECMWF/ERA5_LAND/DAILY_AGGR
+// - CHIRPS Daily: UCSB-CHG/CHIRPS/DAILY
 //
 // Before running:
-// 1. Replace PROVINCE_ASSET with a province boundary FeatureCollection asset.
-// 2. Ensure each province feature has province and province_code properties.
-// 3. Export the CSV to Drive, then place it at:
+// 1) Upload a 2022/current China province boundary asset to GEE.
+// 2) Make sure each province feature has province name and province code fields.
+// 3) Run in 5-year chunks to avoid export timeout.
+// 4) After each chunk finishes, concatenate CSVs locally and place as:
 //    data/interim/province_daily_climate_2000_2024.csv
 
-var PROVINCE_ASSET = 'users/your_account/china_provinces_2022';
-var START_DATE = '2000-01-01';
-var END_DATE = '2025-01-01';
-var EXPORT_DESCRIPTION = 'province_daily_climate_2000_2024';
-var EXPORT_FOLDER = 'gee_exports';
+// ===== User parameters =====
+var PROVINCE_ASSET = 'users/YOUR_USERNAME/china_provinces_2022';  // replace
+var PROVINCE_NAME_FIELD = 'province';       // replace if your asset uses NAME_1 / name / 省份
+var PROVINCE_CODE_FIELD = 'province_code';  // replace if your asset uses adcode / code
+var CHUNK_START_YEAR = 2000;
+var CHUNK_END_YEAR = 2004;  // inclusive; run 2000-2004, 2005-2009, ..., 2020-2024
+var EXPORT_FOLDER = 'heat_drought_rice_modeling';
+var EXPORT_PREFIX = 'province_daily_climate';
 
-var provinces = ee.FeatureCollection(PROVINCE_ASSET);
-
-// ERA5-Land Daily Aggregated covers the full 2000-2024 target window in GEE.
-// temperature_2m_max is Kelvin and is converted to Celsius below.
-var tmax = ee.ImageCollection('ECMWF/ERA5_LAND/DAILY_AGGR')
-  .filterDate(START_DATE, END_DATE)
-  .select('temperature_2m_max')
-  .map(function(image) {
-    return image
-      .subtract(273.15)
-      .rename('tmax_c')
-      .copyProperties(image, ['system:time_start']);
+// ===== Boundary preparation =====
+var provincesRaw = ee.FeatureCollection(PROVINCE_ASSET);
+var provinces = provincesRaw.map(function (f) {
+  return ee.Feature(f.geometry(), {
+    province: f.get(PROVINCE_NAME_FIELD),
+    province_code: f.get(PROVINCE_CODE_FIELD)
   });
+});
 
-var precip = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
-  .filterDate(START_DATE, END_DATE)
-  .select('precipitation')
-  .map(function(image) {
-    return image
-      .rename('precipitation_mm')
-      .copyProperties(image, ['system:time_start']);
-  });
+// ===== Dataset preparation =====
+var start = ee.Date.fromYMD(CHUNK_START_YEAR, 1, 1);
+var end = ee.Date.fromYMD(CHUNK_END_YEAR + 1, 1, 1);
 
-var joined = ee.ImageCollection(
-  ee.Join.inner().apply({
-    primary: tmax,
-    secondary: precip,
-    condition: ee.Filter.equals({
-      leftField: 'system:time_start',
-      rightField: 'system:time_start'
-    })
-  }).map(function(pair) {
-    var left = ee.Image(pair.get('primary'));
-    var right = ee.Image(pair.get('secondary'));
-    return left.addBands(right).copyProperties(left, ['system:time_start']);
-  })
-);
+var era5 = ee.ImageCollection('ECMWF/ERA5_LAND/DAILY_AGGR')
+  .filterDate(start, end)
+  .select('temperature_2m_max');
 
-var dailyRows = joined.map(function(image) {
-  var date = ee.Date(image.get('system:time_start'));
-  var reduced = image.reduceRegions({
+var chirps = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+  .filterDate(start, end)
+  .select('precipitation');
+
+// Build one FeatureCollection per day, then flatten.
+var nDays = end.difference(start, 'day');
+var days = ee.List.sequence(0, nDays.subtract(1));
+
+var dailyFc = ee.FeatureCollection(days.map(function (d) {
+  var date = start.advance(ee.Number(d), 'day');
+  var nextDate = date.advance(1, 'day');
+
+  var tmax = ee.Image(era5.filterDate(date, nextDate).first())
+    .select('temperature_2m_max')
+    .subtract(273.15)
+    .rename('tmax_c');
+
+  var precip = ee.Image(chirps.filterDate(date, nextDate).first())
+    .select('precipitation')
+    .rename('precipitation_mm');
+
+  var img = ee.Image.cat([tmax, precip]);
+
+  var reduced = img.reduceRegions({
     collection: provinces,
     reducer: ee.Reducer.mean(),
     scale: 10000,
-    crs: 'EPSG:4326'
-  });
-  return reduced.map(function(feature) {
-    return ee.Feature(null, {
-      province: feature.get('province'),
-      province_code: feature.get('province_code'),
+    crs: 'EPSG:4326',
+    tileScale: 4
+  }).map(function (f) {
+    return f.set({
       date: date.format('YYYY-MM-dd'),
       year: date.get('year'),
-      month: date.get('month'),
-      tmax_c: feature.get('tmax_c'),
-      precipitation_mm: feature.get('precipitation_mm')
-    });
+      month: date.get('month')
+    }).select([
+      'province', 'province_code', 'date', 'year', 'month',
+      'tmax_c', 'precipitation_mm'
+    ]);
   });
-}).flatten();
+
+  return reduced;
+})).flatten();
+
+print('Preview', dailyFc.limit(10));
+print('Expected rows approx', provinces.size().multiply(nDays));
 
 Export.table.toDrive({
-  collection: dailyRows,
-  description: EXPORT_DESCRIPTION,
+  collection: dailyFc,
+  description: EXPORT_PREFIX + '_' + CHUNK_START_YEAR + '_' + CHUNK_END_YEAR,
   folder: EXPORT_FOLDER,
-  fileNamePrefix: EXPORT_DESCRIPTION,
+  fileNamePrefix: EXPORT_PREFIX + '_' + CHUNK_START_YEAR + '_' + CHUNK_END_YEAR,
   fileFormat: 'CSV',
   selectors: [
-    'province',
-    'province_code',
-    'date',
-    'year',
-    'month',
-    'tmax_c',
-    'precipitation_mm'
+    'province', 'province_code', 'date', 'year', 'month',
+    'tmax_c', 'precipitation_mm'
   ]
 });

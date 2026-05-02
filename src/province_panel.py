@@ -171,6 +171,7 @@ def _append_backfill_rows(primary: pd.DataFrame, backfill: pd.DataFrame) -> pd.D
         left["is_backfill"] = False
     if "is_backfill" not in right.columns:
         right["is_backfill"] = True
+    right = _align_backfill_province_names(left, right)
     for column in ["source_id", "source_name", "source_type"]:
         if column not in left.columns:
             left[column] = pd.NA
@@ -189,6 +190,27 @@ def _append_backfill_rows(primary: pd.DataFrame, backfill: pd.DataFrame) -> pd.D
     combined = combined.sort_values(["_has_yield", "_is_backfill_sort"], ascending=[False, True])
     combined = combined.drop_duplicates(subset=["province", "province_code", "year", "crop"], keep="first")
     return combined.drop(columns=["_has_yield", "_is_backfill_sort"])
+
+
+def _align_backfill_province_names(primary: pd.DataFrame, backfill: pd.DataFrame) -> pd.DataFrame:
+    """Map full province names in backfill rows to the existing panel spelling."""
+
+    if primary.empty or backfill.empty or "province" not in primary.columns or "province" not in backfill.columns:
+        return backfill
+    name_map: dict[str, str] = {}
+    for value in primary["province"].dropna().astype(str).str.strip():
+        if not value:
+            continue
+        normalized = _normalize_province_name(value)
+        if normalized and normalized not in name_map:
+            name_map[normalized] = value
+    if not name_map:
+        return backfill
+    output = backfill.copy()
+    output["province"] = output["province"].map(
+        lambda value: name_map.get(_normalize_province_name(value), value)
+    )
+    return output
 
 
 def _select_official_outcome(frame: pd.DataFrame, warnings: list[str], main_event_year: int = 2022) -> tuple[pd.DataFrame, str]:
