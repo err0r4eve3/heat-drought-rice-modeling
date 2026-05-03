@@ -270,6 +270,7 @@ def _prepare_outcome_panel(
     work = work[work["province"].ne("")]
     if "province_code" not in work.columns:
         work["province_code"] = work.get("admin_code", "")
+    work["province_code"] = _fill_province_codes_from_group(work)
     work["year"] = pd.to_numeric(work["year"], errors="coerce").astype("Int64") if "year" in work.columns else pd.Series(pd.NA, index=work.index, dtype="Int64")
     work = work[work["year"].notna()].copy()
     work = work[(work["year"] >= int(main_year_min)) & (work["year"] <= int(main_year_max))].copy()
@@ -348,12 +349,15 @@ def _merge_province_chd(panel: pd.DataFrame, processed: Path, warnings: list[str
     right = chd.copy()
     left["_province_norm"] = left["province"].map(_normalize_province_name)
     right["_province_norm"] = right["province"].map(_normalize_province_name)
+    left["_province_code_norm"] = _province_code_series(left, prefer_province=False)
+    right["_province_code_norm"] = _province_code_series(right, prefer_province=True)
     left["year"] = pd.to_numeric(left["year"], errors="coerce").astype("Int64")
     right["year"] = pd.to_numeric(right["year"], errors="coerce").astype("Int64")
+    join_key = "_province_code_norm" if left["_province_code_norm"].ne("").any() and right["_province_code_norm"].ne("").any() else "_province_norm"
     merge_columns = [
         column
         for column in [
-            "_province_norm",
+            join_key,
             "year",
             "chd_annual",
             "chd_2022_intensity",
@@ -369,8 +373,8 @@ def _merge_province_chd(panel: pd.DataFrame, processed: Path, warnings: list[str
         ]
         if column in right.columns
     ]
-    merged = left.merge(right[merge_columns], on=["_province_norm", "year"], how="left", suffixes=("", "_chd"))
-    return merged.drop(columns=["_province_norm"])
+    merged = left.merge(right[merge_columns], on=[join_key, "year"], how="left", suffixes=("", "_chd"))
+    return merged.drop(columns=[column for column in ["_province_norm", "_province_code_norm"] if column in merged.columns])
 
 
 def _finalize_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -512,6 +516,56 @@ def _nunique(frame: pd.DataFrame, column: str) -> int:
         return 0
     values = frame[column].dropna().astype(str).str.strip()
     return int(values[values.ne("")].nunique())
+
+
+def _fill_province_codes_from_group(frame: pd.DataFrame) -> pd.Series:
+    """Fill missing province codes from rows with the same province name."""
+
+    if "province_code" not in frame.columns:
+        codes = pd.Series("", index=frame.index, dtype="object")
+    else:
+        codes = frame["province_code"].map(_normalize_admin_code)
+    if "province" not in frame.columns:
+        return codes
+    provinces = frame["province"].fillna("").astype(str).str.strip()
+    valid = provinces.ne("") & codes.ne("")
+    if not valid.any():
+        return codes
+    code_map = pd.DataFrame({"province": provinces[valid], "province_code": codes[valid]})
+    code_map = code_map.drop_duplicates(subset=["province"], keep="first").set_index("province")["province_code"]
+    missing = codes.eq("")
+    filled = provinces.map(code_map).fillna("")
+    codes.loc[missing] = filled.loc[missing]
+    return codes
+
+
+def _province_code_series(frame: pd.DataFrame, prefer_province: bool = False) -> pd.Series:
+    """Return normalized province-code join keys."""
+
+    candidates: list[pd.Series] = []
+    for column in (["province", "province_code", "admin_code"] if prefer_province else ["province_code", "admin_code", "province"]):
+        if column in frame.columns:
+            candidates.append(frame[column].map(_normalize_admin_code))
+    if not candidates:
+        return pd.Series("", index=frame.index, dtype="object")
+    output = pd.Series("", index=frame.index, dtype="object")
+    for values in candidates:
+        missing = output.eq("")
+        output.loc[missing] = values.loc[missing]
+    return output
+
+
+def _normalize_admin_code(value: Any) -> str:
+    """Normalize administrative codes that may have been read as numbers."""
+
+    text = str(value or "").strip()
+    if text.lower() in {"nan", "none", "<na>"}:
+        return ""
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    if not text.isdigit():
+        return ""
+    return text
 
 
 def _normalize_province_name(value: Any) -> str:

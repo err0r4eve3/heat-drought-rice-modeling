@@ -136,3 +136,50 @@ def test_generate_final_report_summarizes_outputs_and_risk_register(tmp_path: Pa
     assert "县级单产代理面板" in content
     assert "代理面板行数：1" in content
     assert "县/市级 2000-2024 官方水稻单产面板" in risk_report.read_text(encoding="utf-8")
+
+
+def test_generate_final_report_uses_current_chd_coverage_for_claim_strength(tmp_path: Path) -> None:
+    processed = tmp_path / "processed"
+    outputs = tmp_path / "outputs"
+    reports = tmp_path / "reports"
+    processed.mkdir()
+    outputs.mkdir()
+    rows = []
+    for province in ["Alpha", "Beta"]:
+        for year in [2021, 2022]:
+            rows.append(
+                {
+                    "province": province,
+                    "year": year,
+                    "crop": "grain",
+                    "outcome_type": "province_grain_yield_anomaly",
+                    "yield_anomaly_pct": 1.0,
+                    "province_grain_yield_anomaly": 1.0,
+                    "chd_annual": 2.0,
+                }
+            )
+    pd.DataFrame(rows).to_csv(processed / "province_model_panel.csv", index=False)
+    pd.DataFrame(
+        [
+            {"province": province, "year": year, "chd_annual": 2.0}
+            for province in ["Alpha", "Beta"]
+            for year in [2021, 2022]
+        ]
+    ).to_csv(processed / "province_chd_panel.csv", index=False)
+
+    report_path = generate_final_report(
+        processed_dir=processed,
+        output_dir=outputs,
+        reports_dir=reports,
+        main_event_year=2022,
+        main_year_min=2021,
+        main_year_max=2022,
+    )
+
+    content = report_path.read_text(encoding="utf-8")
+    risk_content = (reports / "project_risk_assessment.md").read_text(encoding="utf-8")
+
+    assert "`impact_assessment`" in content
+    assert "`ok_for_province_fixed_effects`" in content
+    assert "chd_annual" in content
+    assert "exposure_index 非空 0/4" not in risk_content

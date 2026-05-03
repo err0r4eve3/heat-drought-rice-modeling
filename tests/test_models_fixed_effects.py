@@ -35,7 +35,11 @@ def test_run_modeling_writes_province_fixed_effects_separately(tmp_path: Path) -
     outputs = tmp_path / "data" / "outputs"
     reports = tmp_path / "reports"
     processed.mkdir(parents=True)
+    outputs.mkdir(parents=True)
     pd.DataFrame(_synthetic_province_panel()).to_csv(processed / "province_model_panel.csv", index=False)
+    pd.DataFrame(
+        [{"metric": "exposure_coverage_status", "value": "ok_only_for_2022_cross_section"}]
+    ).to_csv(outputs / "exposure_coverage_diagnosis.csv", index=False)
 
     result = run_modeling(
         model_panel=processed / "province_model_panel.csv",
@@ -55,6 +59,7 @@ def test_run_modeling_writes_province_fixed_effects_separately(tmp_path: Path) -
 
     assert result.status == "ok"
     assert "province_fixed_effects_and_event_study_candidate" in scope_text
+    assert "Exposure coverage status: `ok_for_province_fixed_effects`" in scope_text
     assert "descriptive_correlation_only" not in scope_text
     assert "descriptive_ols" in {row["model"] for row in coefficients}
     assert "province_two_way_fixed_effects" in {row["model"] for row in coefficients}

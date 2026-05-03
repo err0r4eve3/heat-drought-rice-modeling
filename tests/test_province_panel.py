@@ -195,3 +195,45 @@ def test_build_province_model_panel_aligns_backfill_full_province_names(tmp_path
 
     assert set(panel["province"]) == {"上海"}
     assert set(panel["year"]) == {2007, 2008, 2016}
+
+
+def test_build_province_model_panel_merges_chd_by_province_code_when_names_differ(tmp_path: Path) -> None:
+    processed = tmp_path / "data" / "processed"
+    reports = tmp_path / "reports"
+    processed.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"province": "北京", "province_code": "110000", "year": 2021, "crop": "grain", "yield_kg_per_hectare": 5000},
+            {"province": "北京", "province_code": "110000", "year": 2022, "crop": "grain", "yield_kg_per_hectare": 4900},
+        ]
+    ).to_csv(processed / "yield_panel_combined.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "province": "110000",
+                "province_code": "110000",
+                "year": 2022,
+                "chd_annual": 4.0,
+                "chd_2022_intensity": 4.0,
+                "chd_2022_treated_p75": 1,
+                "event_time_2022": 0,
+                "post_2022": 1,
+            }
+        ]
+    ).to_csv(processed / "province_chd_panel.csv", index=False)
+
+    build_province_model_panel(
+        processed_dir=processed,
+        reports_dir=reports,
+        main_year_min=2021,
+        main_year_max=2022,
+        baseline_years=(2021, 2022),
+        min_valid_observations=2,
+    )
+
+    panel = pd.read_csv(processed / "province_model_panel.csv")
+    event = panel.loc[panel["year"].eq(2022)].iloc[0]
+
+    assert event["province"] == "北京"
+    assert event["chd_annual"] == 4.0
+    assert event["chd_2022_intensity"] == 4.0

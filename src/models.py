@@ -692,7 +692,10 @@ def _load_exposure_scope(processed: Path) -> dict[str, Any]:
         chd_rate = coverage_fn(main, "exposure_index")
     has_2022 = _has_event_exposure(main, "chd_2022_intensity", 2022) or _has_event_exposure(main, "exposure_index", 2022)
     diagnosis = _read_exposure_diagnosis(processed.parent / "outputs" / "exposure_coverage_diagnosis.csv")
-    status = diagnosis or ("ok_for_panel_model" if chd_rate >= 0.75 else "ok_only_for_2022_cross_section" if has_2022 else "not_usable_until_fixed")
+    if chd_rate >= 0.75:
+        status = "ok_for_province_fixed_effects" if use_target_coverage else "ok_for_panel_model"
+    else:
+        status = diagnosis or ("ok_only_for_2022_cross_section" if has_2022 else "not_usable_until_fixed")
     return {
         "chd_annual_coverage_rate": chd_rate,
         "yield_anomaly_coverage_rate": yield_rate,

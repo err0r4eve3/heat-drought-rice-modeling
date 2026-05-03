@@ -127,6 +127,12 @@ def _build_summary(tables: dict[str, Any], main_event_year: int, main_year_min: 
     agri_source_leads = _filter_agri_source_leads(agri_sources)
 
     event_model = _filter_year(model, main_event_year)
+    province_chd_coverage_rate = _coverage_rate(model_main, "chd_annual", main_year_min, main_year_max)
+    yield_anomaly_coverage_rate = _coverage_rate(model_main, "yield_anomaly_pct", main_year_min, main_year_max)
+    exposure_status = _current_exposure_status(
+        province_chd_coverage_rate,
+        _diagnosis_metric(exposure_diagnosis, "exposure_coverage_status"),
+    )
     summary = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "inventory_rows": len(tables["inventory"]),
@@ -181,11 +187,20 @@ def _build_summary(tables: dict[str, Any], main_event_year: int, main_year_min: 
         "annual_exposure_year_max": _max_numeric(annual_exposure, "year"),
         "annual_exposure_chd_nonmissing": _non_missing_count(annual_exposure, "chd_annual"),
         "annual_exposure_chd_coverage_rate": _coverage_rate(annual_exposure, "chd_annual", main_year_min, main_year_max),
-        "exposure_coverage_status": _diagnosis_metric(exposure_diagnosis, "exposure_coverage_status"),
-        "exposure_likely_causes": _diagnosis_metric(exposure_diagnosis, "likely_causes"),
-        "event_exposure_summary": _numeric_summary(event_model, "exposure_index"),
+        "province_chd_coverage_rate": province_chd_coverage_rate,
+        "yield_anomaly_coverage_rate": yield_anomaly_coverage_rate,
+        "report_conclusion_strength": _conclusion_strength_from_coverage(
+            province_chd_coverage_rate,
+            yield_anomaly_coverage_rate,
+        ),
+        "exposure_coverage_status": exposure_status,
+        "exposure_likely_causes": _current_exposure_causes(
+            exposure_status,
+            _diagnosis_metric(exposure_diagnosis, "likely_causes"),
+        ),
+        "event_exposure_summary": _numeric_summary(event_model, "chd_annual"),
         "event_yield_anomaly_summary": _numeric_summary(event_model, "yield_anomaly_pct"),
-        "top_exposure": _top_rows(event_model, "exposure_index", ["province", "crop", "exposure_index"], 5),
+        "top_exposure": _top_rows(event_model, "chd_annual", ["province", "crop", "chd_annual"], 5),
         "bottom_yield_anomaly": _bottom_rows(event_model, "yield_anomaly_pct", ["province", "crop", "yield_anomaly_pct"], 5),
         "coefficient_rows": len(coefficients),
         "event_rows": len(event),
@@ -288,7 +303,7 @@ def _render_final_report(summary: dict[str, Any], outputs: Path, main_event_year
         "",
         f"## 8. {main_event_year} 年 CHD 暴露概况",
         "",
-        _format_numeric_summary(summary["event_exposure_summary"], "exposure_index"),
+        _format_numeric_summary(summary["event_exposure_summary"], "chd_annual"),
         "",
         "高暴露样本前 5：",
         "",
@@ -345,7 +360,7 @@ def _render_final_report(summary: dict[str, Any], outputs: Path, main_event_year
             "## 15. 主要数据缺口",
             "",
             "- 县/市级 2000-2024 官方水稻单产面板仍不足，当前不再追补为主模型依赖；2025 只作全国/省级背景或补充说明。",
-            "- 2024 伏秋旱验证事件仍需补齐气象、遥感和统计产量。",
+            "- 2024 伏秋旱验证事件仍需补齐官方统计产量；年度 CHD 气象暴露已覆盖到 2024。",
             "- 县级稻田像元加权暴露仍需替代当前省级近似。",
             "",
             "## 16. 后续路线图",
@@ -376,7 +391,7 @@ def _render_risk_report(summary: dict[str, Any]) -> str:
         "- 稻田掩膜已从 metadata-only 升级为行政单元 zonal stats 输出。",
         "- 物候窗口已从固定 6-9 月升级为 ChinaRiceCalendar DOY 栅格聚合，并保留默认 fallback。",
         "- ERS 英文省名已归一化为中文省名，可与 NBS 近年公告按省衔接。",
-        "- 模型面板已自动生成 trend_yield、yield_anomaly_pct、稳定性指标和 exposure_index。",
+        "- 模型面板已自动生成 trend_yield、yield_anomaly_pct、稳定性指标和 chd_annual；旧 exposure_index 仅作为历史字段保留。",
         "- 建模模块已处理常数预测变量和缺少 admin_id 的省级面板场景。",
         f"- 深度数据源检索已生成 {summary['source_rows']} 条候选源；结果见 `reports/deep_data_search_report.md`。",
         "",
@@ -387,7 +402,7 @@ def _render_risk_report(summary: dict[str, Any]) -> str:
         "## 关键数据缺口",
         "",
         "- 县/市级 2000-2024 官方水稻单产面板：自动公开源未找到完整可下载数据。",
-        "- 2024 伏秋旱验证事件：当前气象/遥感可用处理结果主要集中于 2022，验证事件证据不足。",
+        "- 2024 伏秋旱验证事件：年度 CHD 气象暴露已覆盖到 2024，仍缺 2024 官方产量作为外部验证。",
         "- 县级暴露：当前建模优先使用省级 NetCDF 暴露面板，县级稻田像元加权暴露仍需扩展。",
         "- 行政区划跨年一致性：还没有撤并调整后的代码映射表。",
         "",
@@ -395,7 +410,7 @@ def _render_risk_report(summary: dict[str, Any]) -> str:
         "",
         "- 省、市、县统计年鉴中的水稻播种面积、产量、单产，主模型至少覆盖 2000-2024 内容年份。",
         "- 统计公报 PDF/HTML 批量抓取结果，配套字段映射和单位校验表。",
-        "- ERA5-Land/CHIRPS/GLEAM/MODIS 的 2000-2024 完整生育期网格，2025 作为可选背景更新。",
+        "- ERA5-Land/CHIRPS 的 2000-2024 省级日尺度 CHD 输入已落地；若需要机制或像元加权暴露，再整理 GLEAM/MODIS 和稻田掩膜。",
         "- 历年行政区划代码表和名称变更表。",
         "- 已固化的数据源目录：`data/raw/references/deep_required_data_sources.csv`。",
         "",
@@ -528,6 +543,30 @@ def _coverage_rate(frame: Any, column: str, year_min: int, year_max: int) -> flo
     else:
         expected = max(1, _nunique(frame, key) * (int(year_max) - int(year_min) + 1))
     return _non_missing_count(frame, column) / expected if expected else None
+
+
+def _conclusion_strength_from_coverage(chd_coverage: float | None, yield_coverage: float | None) -> str:
+    """Return the report conclusion strength implied by current model inputs."""
+
+    if chd_coverage is not None and yield_coverage is not None and chd_coverage >= 0.75 and yield_coverage >= 0.75:
+        return "impact_assessment"
+    return "association"
+
+
+def _current_exposure_status(chd_coverage: float | None, fallback_status: str) -> str:
+    """Prefer current CHD panel coverage over stale exposure-index diagnostics."""
+
+    if chd_coverage is not None and chd_coverage >= 0.75:
+        return "ok_for_province_fixed_effects"
+    return fallback_status
+
+
+def _current_exposure_causes(exposure_status: str, fallback_causes: str) -> str:
+    """Return exposure limitation text consistent with the active CHD panel."""
+
+    if exposure_status == "ok_for_province_fixed_effects":
+        return "n/a"
+    return fallback_causes
 
 
 def _diagnosis_metric(frame: Any, metric: str) -> str:
@@ -686,8 +725,10 @@ def _format_scope_statement(summary: dict[str, Any]) -> list[str]:
     admin_level = tier.get("admin_level") or _first_count_key(summary.get("yield_admin_levels", {})) or "unknown"
     crop_type = tier.get("crop_type") or _first_count_key(summary.get("yield_crops", {})) or "unknown"
     official = tier.get("is_official_statistics", "unknown")
-    coverage = tier.get("year_coverage_rate", summary.get("yield_best_coverage"))
-    conclusion_strength = tier.get("conclusion_strength", "impact_assessment")
+    coverage = summary.get("yield_anomaly_coverage_rate")
+    if coverage is None:
+        coverage = tier.get("year_coverage_rate", summary.get("yield_best_coverage"))
+    conclusion_strength = summary.get("report_conclusion_strength") or tier.get("conclusion_strength", "impact_assessment")
     forbidden = tier.get("forbidden_claim", "strong_causal_claim_without_valid_identification")
     uses_proxy = summary.get("yield_proxy_rows", 0) > 0
     return [
@@ -710,14 +751,38 @@ def _format_scope_statement(summary: dict[str, Any]) -> list[str]:
 def _risk_items(summary: dict[str, Any]) -> list[dict[str, str]]:
     """Build a risk register from summary metrics."""
 
-    exposure_coverage = _coverage(summary["model_main_exposure_nonmissing"], summary["model_main_rows"])
-    anomaly_coverage = _coverage(summary["model_main_yield_anomaly_nonmissing"], summary["model_main_rows"])
+    chd_coverage = summary.get("province_chd_coverage_rate")
+    exposure_coverage = (
+        float(chd_coverage)
+        if chd_coverage is not None
+        else _coverage(summary["model_main_exposure_nonmissing"], summary["model_main_rows"])
+    )
+    anomaly_coverage_value = summary.get("yield_anomaly_coverage_rate")
+    anomaly_coverage = (
+        float(anomaly_coverage_value)
+        if anomaly_coverage_value is not None
+        else _coverage(summary["model_main_yield_anomaly_nonmissing"], summary["model_main_rows"])
+    )
     county_panel_available = "county" in summary["yield_admin_levels"] or "prefecture" in summary["yield_admin_levels"]
     source_search_evidence = (
         f"已完成深度检索目录 {summary['source_rows']} 条，yield_panel 候选 {summary['yield_source_rows']} 条；"
         "未发现完整公开县/市级 2000-2024 内容年份水稻单产直链。"
         if summary["source_rows"]
         else "当前合并产量面板以省级公开源为主。"
+    )
+    exposure_evidence = (
+        f"主模型 chd_annual 非空 {summary['province_chd_nonmissing']}/{summary['model_main_rows']} 行；"
+        f"按 province-year 目标覆盖率 {_fmt_number(exposure_coverage)}。"
+    )
+    exposure_next = (
+        "保持省域平均 CHD 口径；若论文需要稻田加权暴露，再扩展县级或像元加权聚合。"
+        if exposure_coverage >= 0.75
+        else "按数据源目录下载 ERA5-Land、CHIRPS、MODIS、GLEAM 并扩展县级聚合。"
+    )
+    annual_exposure_covers_2024 = (
+        summary.get("annual_exposure_year_max") is not None
+        and float(summary.get("annual_exposure_year_max")) >= 2024
+        and exposure_coverage >= 0.75
     )
     risks = [
         {
@@ -729,10 +794,10 @@ def _risk_items(summary: dict[str, Any]) -> list[dict[str, str]]:
         },
         {
             "risk": "暴露变量覆盖不足",
-            "level": "高" if exposure_coverage < 0.5 else "中",
-            "status": "部分缓解",
-            "evidence": f"主模型 exposure_index 非空 {summary['model_main_exposure_nonmissing']}/{summary['model_main_rows']} 行。",
-            "next": "按数据源目录下载 ERA5-Land、CHIRPS、MODIS、GLEAM 并扩展县级聚合。",
+            "level": "低" if exposure_coverage >= 0.75 else "高" if exposure_coverage < 0.5 else "中",
+            "status": "已缓解" if exposure_coverage >= 0.75 else "部分缓解",
+            "evidence": exposure_evidence,
+            "next": exposure_next,
         },
         {
             "risk": "产量异常覆盖不足",
@@ -752,9 +817,15 @@ def _risk_items(summary: dict[str, Any]) -> list[dict[str, str]]:
         {
             "risk": "2024 验证事件证据不足",
             "level": "中",
-            "status": "已定位数据源，处理结果未补齐",
-            "evidence": "模型面板含 2025 背景/可选年份行，但主模型已过滤到 2000-2024；当前暴露面板仍主要由已有 2022 数据驱动。",
-            "next": "用 ERA5-Land/CHIRPS/MODIS/GLEAM 补 2024，并收集地方统计产量。",
+            "status": "部分缓解" if annual_exposure_covers_2024 else "已定位数据源，处理结果未补齐",
+            "evidence": (
+                "年度 CHD 暴露面板已覆盖到 2024；仍需收集 2024 官方产量用于外部验证。"
+                if annual_exposure_covers_2024
+                else "模型面板含 2025 背景/可选年份行，但主模型已过滤到 2000-2024；当前暴露面板仍主要由已有 2022 数据驱动。"
+            ),
+            "next": "收集 2024 地方统计产量，并将其作为外部一致性验证。"
+            if annual_exposure_covers_2024
+            else "用 ERA5-Land/CHIRPS/MODIS/GLEAM 补 2024，并收集地方统计产量。",
         },
     ]
     return risks
