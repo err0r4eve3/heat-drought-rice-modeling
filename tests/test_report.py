@@ -182,4 +182,6 @@ def test_generate_final_report_uses_current_chd_coverage_for_claim_strength(tmp_
     assert "`impact_assessment`" in content
     assert "`ok_for_province_fixed_effects`" in content
     assert "chd_annual" in content
+    assert "当前 CHD 暴露为省域平均暴露，不是稻田加权暴露。" in content
+    assert "2008-2010 省级粮食回填仍缺，但主模型覆盖率已超过门控阈值。" in content
     assert "exposure_index 非空 0/4" not in risk_content

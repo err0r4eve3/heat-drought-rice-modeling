@@ -742,9 +742,11 @@ def _format_scope_statement(summary: dict[str, Any]) -> list[str]:
         f"- 产量覆盖报告行数：{_fmt_int(summary.get('yield_coverage_rows'))}。",
         f"- 行政区划跨年映射记录数：{_fmt_int(summary.get('admin_crosswalk_rows'))}；默认映射到 2022 年事件边界。",
         f"- 是否使用遥感代理长势分析：{uses_proxy}；遥感代理不得写成官方产量损失。",
+        "- 当前 CHD 暴露为省域平均暴露，不是稻田加权暴露。",
+        "- 2008-2010 省级粮食回填仍缺，但主模型覆盖率已超过门控阈值。",
         "- 2024 年只作为外部一致性验证或描述性对照，不作为主因果识别事件。",
         f"- 当前允许结论强度：`{conclusion_strength}`。",
-        f"- 禁止表述：`{forbidden}`；不得写“证明 2022 热旱导致单产下降”。",
+        f"- 禁止表述：`{forbidden}`；不得写“准因果证据”“因果效应”“证明导致”或“市县级损失”。",
     ]
 
 
