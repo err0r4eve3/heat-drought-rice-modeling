@@ -19,6 +19,35 @@ def test_generate_final_report_handles_missing_outputs(tmp_path: Path) -> None:
     assert "主要数据缺口" in content
 
 
+def test_generate_final_report_prefers_fixed_effects_main_coefficient(tmp_path: Path) -> None:
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    pd.DataFrame(
+        [
+            {"model": "descriptive_ols", "term": "chd_annual", "estimate": 0.22, "n": 10, "r2": 0.01},
+            {
+                "model": "province_two_way_fixed_effects",
+                "term": "chd_annual",
+                "estimate": -0.24,
+                "p_value": 0.14,
+                "n": 10,
+                "r2": 0.7,
+            },
+        ]
+    ).to_csv(outputs / "model_coefficients.csv", index=False)
+
+    report_path = generate_final_report(
+        processed_dir=tmp_path / "processed",
+        output_dir=outputs,
+        reports_dir=tmp_path / "reports",
+        main_event_year=2022,
+    )
+
+    content = report_path.read_text(encoding="utf-8")
+    assert "主模型 CHD 系数：model=province_two_way_fixed_effects, estimate=-0.24" in content
+    assert "主模型 CHD 系数：estimate=0.22" not in content
+
+
 def test_generate_final_report_summarizes_outputs_and_risk_register(tmp_path: Path) -> None:
     processed = tmp_path / "processed"
     interim = tmp_path / "interim"

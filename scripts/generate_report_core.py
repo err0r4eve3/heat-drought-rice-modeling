@@ -670,11 +670,24 @@ def _main_coefficient(frame: Any) -> str:
 
     if frame.empty or "term" not in frame.columns:
         return "缺失"
-    match = frame[frame["term"].astype(str).isin(["chd_annual", "chd_2022_intensity", "exposure_index"])]
+    term_order = {"chd_annual": 0, "chd_2022_intensity": 1, "exposure_index": 2}
+    model_order = {"province_two_way_fixed_effects": 0, "descriptive_ols": 1}
+    match = frame[frame["term"].astype(str).isin(term_order)].copy()
     if match.empty:
         return "未估计"
-    row = match.iloc[0]
-    return f"estimate={_fmt_number(row.get('estimate'))}, n={_fmt_number(row.get('n'))}, R2={_fmt_number(row.get('r2'))}"
+    if "model" not in match.columns:
+        match["model"] = ""
+    match["_model_order"] = match["model"].astype(str).map(model_order).fillna(99)
+    match["_term_order"] = match["term"].astype(str).map(term_order).fillna(99)
+    row = match.sort_values(["_model_order", "_term_order"]).iloc[0]
+    parts = [
+        f"model={row.get('model') or 'unknown'}",
+        f"estimate={_fmt_number(row.get('estimate'))}",
+    ]
+    if "p_value" in match.columns and _has_value(row.get("p_value")):
+        parts.append(f"p={_fmt_number(row.get('p_value'))}")
+    parts.extend([f"n={_fmt_number(row.get('n'))}", f"R2={_fmt_number(row.get('r2'))}"])
+    return ", ".join(parts)
 
 
 def _event_time_zero(frame: Any) -> str:
@@ -979,6 +992,19 @@ def _fmt_number(value: Any) -> str:
     if number.is_integer():
         return str(int(number))
     return f"{number:.6g}"
+
+
+def _has_value(value: Any) -> bool:
+    """Return True when an optional scalar value is present."""
+
+    if value is None:
+        return False
+    try:
+        import pandas as pd
+
+        return not bool(pd.isna(value))
+    except Exception:
+        return str(value).strip().lower() not in {"", "nan", "none"}
 
 
 def _format_content_year_range(year_min: Any, year_max: Any) -> str:
