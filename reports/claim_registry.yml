@@ -1,0 +1,50 @@
+claims:
+  - id: province_daily_climate_records
+    value: 283092
+    claim_text: "省级日尺度气象面板共 283092 条记录。"
+    source_artifact_expected: "data/interim/province_daily_climate_2000_2024.csv"
+    artifact_tracked: false
+    allowed_in_report: true
+    required_qualifier: "生成结果声明，需由本地流程或 artifact_audit.json 复现核验。"
+  - id: annual_chd_panel_rows
+    value: 775
+    claim_text: "省域平均年度 CHD 暴露面板为 775 行。"
+    source_artifact_expected: "data/processed/annual_exposure_panel.csv"
+    artifact_tracked: false
+    allowed_in_report: true
+    required_qualifier: "生成结果声明，需由本地流程或 artifact_audit.json 复现核验。"
+  - id: province_model_panel_rows
+    value: 666
+    claim_text: "省级模型面板包含 666 行。"
+    source_artifact_expected: "data/processed/province_model_panel.csv"
+    artifact_tracked: false
+    allowed_in_report: true
+    required_qualifier: "生成结果声明，需由本地流程或 artifact_audit.json 复现核验。"
+  - id: model_panel_key_coverage
+    value: 0.859355
+    claim_text: "`yield_anomaly_pct` 与 `chd_annual` 覆盖率均为 0.859355。"
+    source_artifact_expected: "data/processed/province_model_panel.csv"
+    artifact_tracked: false
+    allowed_in_report: true
+    required_qualifier: "生成结果声明，需由本地流程或 artifact_audit.json 复现核验。"
+  - id: main_chd_coefficient
+    value: -0.236536
+    claim_text: "主模型 `chd_annual` 系数为 -0.236536。"
+    source_artifact_expected: "data/outputs/model_coefficients.csv"
+    artifact_tracked: false
+    allowed_in_report: true
+    required_qualifier: "生成结果声明，需由本地流程或 artifact_audit.json 复现核验。"
+  - id: main_chd_p_value
+    value: 0.138256
+    claim_text: "主模型 `chd_annual` p 值为 0.138256。"
+    source_artifact_expected: "data/outputs/model_coefficients.csv"
+    artifact_tracked: false
+    allowed_in_report: true
+    required_qualifier: "生成结果声明，需由本地流程或 artifact_audit.json 复现核验。"
+  - id: robustness_negative_direction_count
+    value: "9/9"
+    claim_text: "9 组稳健性设定的系数方向均为负。"
+    source_artifact_expected: "data/outputs/robustness_results.csv"
+    artifact_tracked: false
+    allowed_in_report: true
+    required_qualifier: "生成结果声明，需由本地流程或 artifact_audit.json 复现核验。"

@@ -1,0 +1,57 @@
+items:
+  - id: figure_1
+    title: "研究区与 2022 省域平均 CHD 暴露地图"
+    scale: province
+    official_outcome_scope: "not_outcome"
+    required_label: "CHD 为省域平均暴露，不是稻田像元加权暴露。"
+    forbidden_interpretation: "不得解释为县域、地级市或田块尺度官方产量损失。"
+    official_yield_loss_claim_allowed: false
+  - id: figure_2
+    title: "2022 省级官方粮食单产异常地图"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "outcome 为省级官方粮食单产异常。"
+    forbidden_interpretation: "不得写成稻谷单产、县域损失或因果减产。"
+    official_yield_loss_claim_allowed: true
+  - id: figure_3
+    title: "省域平均 CHD 与省级官方粮食单产异常散点图"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "CHD 为省域平均暴露；相关关系不等于因果识别。"
+    forbidden_interpretation: "不得把散点相关写成因果效应。"
+    official_yield_loss_claim_allowed: true
+  - id: figure_4
+    title: "省域平均 CHD 固定效应模型系数图"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "CHD 为省域平均暴露；主模型系数和 p 值必须同时显示。"
+    forbidden_interpretation: "不得因方向为负而写成统计显著或强识别。"
+    official_yield_loss_claim_allowed: true
+  - id: figure_5
+    title: "2022 事件研究辅助图"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "事件研究仅为辅助识别尝试。"
+    forbidden_interpretation: "不得写成 quasi_causal_evidence。"
+    official_yield_loss_claim_allowed: true
+  - id: figure_6
+    title: "省域平均 CHD 稳健性系数方向图"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "CHD 为省域平均暴露；9/9 方向一致不等于全部显著。"
+    forbidden_interpretation: "不得写成强因果结论。"
+    official_yield_loss_claim_allowed: true
+  - id: table_1
+    title: "数据来源与变量说明"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "CHD 为省域平均暴露，产量为省级官方粮食统计。"
+    forbidden_interpretation: "不得把粮食单产异常写成稻谷单产异常。"
+    official_yield_loss_claim_allowed: true
+  - id: table_5
+    title: "研究限制与解释边界"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "当前最高结论强度为 impact_assessment。"
+    forbidden_interpretation: "不得声称县级官方损失、稻田加权暴露或强因果识别。"
+    official_yield_loss_claim_allowed: false

@@ -8,12 +8,12 @@
 
 | 编号 | 标题 | 核心用途 | 主要数据 | 当前处理要求 |
 | --- | --- | --- | --- | --- |
-| Figure 1 | 研究区与 2022 CHD 暴露地图 | 展示 2022 年复合热旱事件的空间分布，并突出长江中下游及邻近省份 | `data/processed/province_chd_panel.csv`、省级边界 | 使用 `chd_annual` 或 `chd_2022_intensity`；图注说明 CHD 为省域平均暴露 |
+| Figure 1 | 研究区与 2022 省域平均 CHD 暴露地图 | 展示 2022 年复合热旱事件的空间分布，并突出长江中下游及邻近省份 | `data/processed/province_chd_panel.csv`、省级边界 | 使用 `chd_annual` 或 `chd_2022_intensity`；图注说明 CHD 为省域平均暴露 |
 | Figure 2 | 2022 省级粮食单产异常地图 | 展示产量侧异常的省级空间差异 | `data/processed/province_model_panel.csv` | 使用 `yield_anomaly_pct`；图注说明 outcome 为省级粮食单产异常 |
-| Figure 3 | CHD 与单产异常散点图 | 展示复合热旱暴露与粮食单产异常之间的描述性关系 | `data/processed/province_model_panel.csv` | 可区分 2022 和非 2022 年；避免把散点相关写成因果 |
-| Figure 4 | 固定效应模型系数图 | 展示主模型 `chd_annual` 系数、置信区间和 p 值 | `data/outputs/model_coefficients.csv` | 优先使用 `province_two_way_fixed_effects` 行；注明 p=0.138256 |
+| Figure 3 | 省域平均 CHD 与单产异常散点图 | 展示复合热旱暴露与粮食单产异常之间的描述性关系 | `data/processed/province_model_panel.csv` | 可区分 2022 和非 2022 年；避免把散点相关写成因果 |
+| Figure 4 | 省域平均 CHD 固定效应模型系数图 | 展示主模型 `chd_annual` 系数、置信区间和 p 值 | `data/outputs/model_coefficients.csv` | 优先使用 `province_two_way_fixed_effects` 行；注明 p=0.138256 |
 | Figure 5 | 事件研究图 | 展示事件前后动态和前趋势检验 | `data/outputs/event_study_coefficients.csv` | 图注说明仅作为辅助识别尝试；不写强因果结论 |
-| Figure 6 | 稳健性系数方向图 | 展示 9 组稳健性设定方向均为负 | `data/outputs/robustness_results.csv` | 标出每组 p 值和方向；说明 9/9 方向一致不等于全部显著 |
+| Figure 6 | 省域平均 CHD 稳健性系数方向图 | 展示 9 组稳健性设定方向均为负 | `data/outputs/robustness_results.csv` | 标出每组 p 值和方向；说明 9/9 方向一致不等于全部显著 |
 
 ## 表格计划
 
@@ -34,6 +34,7 @@
 - 事件研究图表只能写作辅助识别尝试。
 - 稳健性图表必须同时显示方向一致性和显著性不足的限制。
 - 不把任何县域、栅格或遥感响应图解释为官方产量损失。
+- 报告中的行数、覆盖率、系数和 p 值均按 `reports/claim_registry.yml` 登记；当前仓库未跟踪生成数据时，应先用 `scripts/summarize_generated_artifacts.py` 生成 `data/outputs/artifact_audit.json` 或重新运行 pipeline 再复核。
 
 ## 建议优先级
 
