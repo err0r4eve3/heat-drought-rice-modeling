@@ -9,11 +9,12 @@ from scripts.validate_report_claims import validate_report_paths
 
 def test_report_claim_guardrail_rejects_unbounded_causal_claim(tmp_path: Path) -> None:
     report = tmp_path / "report.md"
-    report.write_text("本文识别出因果效应，并证明县级产量损失。\n", encoding="utf-8")
+    report.write_text("本文识别出因果效应，并证明县级产量损失，还估计了处理效应。\n", encoding="utf-8")
 
     issues = validate_report_paths([report])
 
     assert {issue.rule for issue in issues} >= {"causal_overclaim", "subprovince_yield_loss_overclaim"}
+    assert any(issue.rule == "treatment_effect_overclaim" for issue in issues)
 
 
 def test_report_claim_guardrail_allows_bounded_language(tmp_path: Path) -> None:

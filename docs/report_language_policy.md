@@ -22,6 +22,12 @@
 - 稻田像元加权暴露已经完成
 - 完全平衡面板
 - 2024 年独立验证模型有效
+- 处理效应或 treatment effect
+- 代理数据修正官方统计
+
+## 描述性证据审计
+
+`scripts/generate_descriptive_evidence_audit.py` 只读取本地聚合产物，不读取 `data/raw/`。当产物不存在时，脚本必须软跳过并写出 skip reason；当产物存在时，只能输出样本构造、代理一致性诊断和 2024 描述性外部一致性。该审计的证据类型固定为 `descriptive`，`raw_data_required=false`，不得升级为因果识别或县级官方损失归因。
 
 ## 当前固定口径
 

@@ -52,6 +52,14 @@ BALANCED_PANEL_TERMS = (
     "perfectly balanced",
 )
 
+TREATMENT_EFFECT_TERMS = (
+    "处理效应",
+    "treatment effect",
+    "导致减产",
+    "归因于",
+    "attributed to",
+)
+
 SAFE_NEGATION_TERMS = (
     "不",
     "不能",
@@ -159,6 +167,7 @@ def _validate_high_risk_terms(path: Path, text: str) -> list[ClaimIssue]:
         ("subprovince_yield_loss_overclaim", SUBPROVINCE_YIELD_LOSS_TERMS),
         ("paddy_weighted_overclaim", PADDY_WEIGHTED_TERMS),
         ("balanced_panel_overclaim", BALANCED_PANEL_TERMS),
+        ("treatment_effect_overclaim", TREATMENT_EFFECT_TERMS),
     ]
     for line_number, line in enumerate(text.splitlines(), start=1):
         normalized = line.lower()

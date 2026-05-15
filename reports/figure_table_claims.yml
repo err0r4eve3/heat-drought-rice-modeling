@@ -55,3 +55,24 @@ items:
     required_label: "当前最高结论强度为 impact_assessment。"
     forbidden_interpretation: "不得声称县级官方损失、稻田加权暴露或强因果识别。"
     official_yield_loss_claim_allowed: false
+  - id: table_6
+    title: "样本流与入模损耗审计"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "仅描述样本构造和可用观测，不声称全国代表性。"
+    forbidden_interpretation: "不得写成因果识别样本或处理效应样本。"
+    official_yield_loss_claim_allowed: false
+  - id: table_7
+    title: "代理面板与省级官方统计描述性一致性诊断"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "代理值仅用于描述性稳健性和缺口诊断。"
+    forbidden_interpretation: "不得声称代理数据修正或替代官方统计。"
+    official_yield_loss_claim_allowed: false
+  - id: table_8
+    title: "2024 描述性外部一致性证据卡片"
+    scale: province
+    official_outcome_scope: "province_official_grain"
+    required_label: "2024 仅作为描述性外部一致性辅助材料。"
+    forbidden_interpretation: "不得写成独立验证、准因果支持或县级定量效应。"
+    official_yield_loss_claim_allowed: false

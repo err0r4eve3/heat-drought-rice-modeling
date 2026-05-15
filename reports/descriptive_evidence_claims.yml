@@ -1,0 +1,22 @@
+claims:
+  - claim_id: sample_flow_attrition_audit
+    artifact_id: descriptive_evidence_audit.sample_flow
+    evidence_type: descriptive
+    raw_data_required: false
+    report_section: "Sample Flow And Attrition"
+    allowed_language: "sample construction, attrition, retained observations"
+    forbidden_language: "national representativeness, causal identification, treatment effect"
+  - claim_id: proxy_official_consistency_diagnostic
+    artifact_id: descriptive_evidence_audit.proxy_official_consistency
+    evidence_type: descriptive
+    raw_data_required: false
+    report_section: "Proxy Vs Official Consistency"
+    allowed_language: "descriptive robustness diagnostic and gap diagnosis"
+    forbidden_language: "proxy correction of official statistics, county official yield loss"
+  - claim_id: consistency_2024_descriptive_card
+    artifact_id: descriptive_evidence_audit.consistency_2024
+    evidence_type: descriptive
+    raw_data_required: false
+    report_section: "2024 Descriptive External Consistency"
+    allowed_language: "descriptive external consistency context"
+    forbidden_language: "independent validation, causal support, county quantitative causal effect"
